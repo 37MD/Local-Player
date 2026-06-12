@@ -368,10 +368,13 @@ var LV = (function() {
   }
 
   function prevTrack() {
-    if (!_files.length) return;
-    var idx = (_currentIdx !== null ? _currentIdx - 1 : _files.length - 1);
-    if (idx < 0) idx = _files.length - 1; // wrap to last
-    play(idx);
+    if (!_filtered.length) return;
+    if (_currentIdx === null) return play(_filtered[_filtered.length - 1].idx);
+    var curPos = -1;
+    _filtered.forEach(function(f, i) { if (f.idx === _currentIdx) curPos = i; });
+    if (curPos === -1) return play(_filtered[_filtered.length - 1].idx);
+    var prev = (curPos - 1 + _filtered.length) % _filtered.length;
+    play(_filtered[prev].idx);
   }
 
   function playAll() {
@@ -385,12 +388,11 @@ var LV = (function() {
   }
 
   function nextShuffleIdx() {
-    if (!_files.length) return null;
-    // Reset if all played
-    if (_playedIndices.length >= _files.length) _playedIndices = [];
+    if (!_filtered.length) return null;
+    if (_playedIndices.length >= _filtered.length) _playedIndices = [];
     var available = [];
-    _files.forEach(function(f, i) {
-      if (_playedIndices.indexOf(i) === -1) available.push(i);
+    _filtered.forEach(function(f, i) {
+      if (_playedIndices.indexOf(f.idx) === -1) available.push(f.idx);
     });
     if (!available.length) return null;
     var pick = available[Math.floor(Math.random() * available.length)];
@@ -399,10 +401,13 @@ var LV = (function() {
   }
 
   function nextSequentialIdx() {
-    if (!_files.length) return null;
-    var next = (_currentIdx !== null ? _currentIdx + 1 : 0);
-    if (next >= _files.length) next = 0; // loop
-    return next;
+    if (!_filtered.length) return null;
+    if (_currentIdx === null) return _filtered[0].idx;
+    var curPos = -1;
+    _filtered.forEach(function(f, i) { if (f.idx === _currentIdx) curPos = i; });
+    if (curPos === -1) return _filtered[0].idx;
+    var next = (curPos + 1) % _filtered.length;
+    return _filtered[next].idx;
   }
 
   function playNext() {
@@ -578,6 +583,7 @@ var LV = (function() {
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 
+    lockLandscape();
     enterFullscreen();
 
     onVideoOpen(f, function() {
@@ -599,6 +605,7 @@ var LV = (function() {
 
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
+    lockLandscape();
     enterFullscreen();
 
     onVideoOpen(f, function() {
@@ -621,6 +628,11 @@ var LV = (function() {
     document.body.style.overflow = '';
     exitFullscreen();
     onVideoClose();
+  }
+
+  function lockLandscape() {
+    try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }
+    catch(e) {}
   }
 
   /* ── Fullscreen ── */
@@ -803,14 +815,8 @@ var LV = (function() {
     if (e.key === 'Escape' && overlay.classList.contains('active')) close();
   });
 
-  /* ── Lock to landscape on mobile startup ── */
-  (function initOrientation() {
-    try {
-      if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(function(){});
-      }
-    } catch(e) {}
-  })();
+  /* ── Lock to landscape on startup ── */
+  (function initOrientation() { lockLandscape(); })();
 
   /* ── Restore previous session ── */
   (function initRestore() {
