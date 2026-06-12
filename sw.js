@@ -1,4 +1,4 @@
-const CACHE = 'lv-v3';
+const CACHE = 'lv-v4';
 
 self.addEventListener('install', function(e) {
   self.skipWaiting();

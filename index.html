@@ -164,19 +164,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 #sb-bar.visible { display: flex; }
 #sb-bar .sb-stat { color: var(--muted); font-size: 10px; }
 
-/* ── Mobile landscape overrides ── */
-@media (orientation: landscape) and (max-height: 480px) {
-  .app-header { padding: 8px 12px 6px; }
-  .app-header h1 { font-size: 16px; }
-  .app-header p  { display: none; }
-  .controls { padding: 6px 8px; gap: 6px; }
-  .file-grid { max-height: calc(100vh - 130px); padding: 4px; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
-  .file-info { padding: 6px 8px 8px; }
-  .file-name { font-size: 11px; }
-  .btn { padding: 8px 12px; font-size: 12px; min-height: 36px; }
-  .search-box { padding: 8px 10px; font-size: 12px; min-height: 36px; }
-}
-
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -580,11 +567,8 @@ var LV = (function() {
     videoEl.src = f.url;
     videoEl.load();
 
-    lockLandscape();
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
-
-    enterFullscreen();
 
     onVideoOpen(f, function() {
       if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
@@ -603,10 +587,8 @@ var LV = (function() {
     videoEl.src = f.url;
     videoEl.load();
 
-    lockLandscape();
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
-    enterFullscreen();
 
     onVideoOpen(f, function() {
       if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
@@ -626,38 +608,8 @@ var LV = (function() {
     videoEl.src = '';
     overlay.classList.remove('active');
     document.body.style.overflow = '';
-    exitFullscreen();
     onVideoClose();
   }
-
-  function lockLandscape() {
-    try {
-      if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch(function(){}); }
-    } catch(e) {}
-  }
-
-  /* ── Fullscreen ── */
-  function enterFullscreen() {
-    var el = overlay;
-    try {
-      var p = (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
-      if (p && p.then) p.then(function() { lockLandscape(); }).catch(function(){});
-    } catch(e) {}
-  }
-  function exitFullscreen() {
-    try {
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      }
-    } catch(e) {}
-  }
-
-  document.addEventListener('fullscreenchange', function() {
-    if (!document.fullscreenElement && overlay.classList.contains('active')) close();
-  });
-  document.addEventListener('webkitfullscreenchange', function() {
-    if (!document.webkitFullscreenElement && overlay.classList.contains('active')) close();
-  });
 
   /* ── SponsorBlock ── */
   var _sbSegments = [];
@@ -827,9 +779,6 @@ var LV = (function() {
     if (e.key === 'Escape' && overlay.classList.contains('active')) close();
   });
 
-  /* ── Lock to landscape on startup ── */
-  (function initOrientation() { lockLandscape(); })();
-
   /* ── Restore previous session ── */
   (function initRestore() {
     _rootName = loadRootName();
@@ -865,7 +814,6 @@ var LV = (function() {
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
-      orientation: 'natural',
       background_color: '#0f0f0f',
       theme_color: '#0f0f0f',
       categories: ['entertainment','video','music'],
