@@ -4,22 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Retro Songs</title>
-viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Trading v5</title>
 <meta name="theme-color" content="#dec09a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Trading v5">
-<meta name="application-name" content="Trading v5">
-<meta name="description" content="Trading v5 YouTube channels for Indian Markets â€” ad-free video hub">
+<meta name="apple-mobile-web-app-title" content="Retro Songs">
+<meta name="application-name" content="Retro Songs">
+<meta name="description" content="Hindi Golden Era YouTube Channels ad-free">
 <link rel="manifest" href="#" id="pwa-manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='28' fill='%23b8925f'/%3E%3Ccircle cx='96' cy='96' r='55' fill='none' stroke='%231a1a1a' stroke-width='6'/%3E%3Cpolyline points='55,130 80,102 100,110 125,72 140,55' stroke='%231a1a1a' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolygon points='132,48 148,48 148,64' stroke='%231a1a1a' stroke-width='5' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='28' fill='%23b8925f'/%3E%3Ccircle cx='96' cy='96' r='55' fill='none' stroke='%231a1a1a' stroke-width='6'/%3E%3Cpolyline points='55,130 80,102 100,110 125,72 140,55' stroke='%231a1a1a' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolygon points='132,48 148,48 148,64' stroke='%231a1a1a' stroke-width='5' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@700;900&family=DM+Serif+Display&family=Noto+Sans+Devanagari:wght@700&display=swap" rel="stylesheet">
 <style>
-<style>
-
 @media(prefers-reduced-motion){*{animation:none!important;transition:none!important}}
 :root{--bg:#dec09a;--surface:#b8925f;--card:#d4b896;--accent:#1a1a1a;--series-hl:#2c4a2e;--videos-hl:#1a2e4a;--wl-hl:#6b2d00;--api-hl:#4a1a6b;--retro-hl:#7B1E2E;--local-hl:#1a4a3a;--text:#0d0d0d;--muted:#4a3828;--border:#9e7a52;--light:#e8d5b8;--lighter:#f0e6d0}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -300,6 +296,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);background-image:repe
     <div id="retro-channels"></div>
   </div>
 </div>
+
+<div id="pwa-badge" style="display:none" onclick="App.pwaTriggerInstall()">⬇ Install App</div>
 
 <div id="player-overlay">
   <div class="player-topbar">
@@ -842,13 +840,16 @@ var UI = (function() {
     var n = Storage.count();
     var badge = document.getElementById('wl-count');
     var bannerCount = document.getElementById('wl-banner-count');
-    if (n > 0) { badge.textContent = n; badge.style.display = 'inline-block'; }
-    else { badge.style.display = 'none'; }
+    if (badge) {
+      if (n > 0) { badge.textContent = n; badge.style.display = 'inline-block'; }
+      else { badge.style.display = 'none'; }
+    }
     if (bannerCount) bannerCount.textContent = n + ' video' + (n !== 1 ? 's' : '');
   }
 
   function renderWL() {
     var el = document.getElementById('wl-list');
+    if (!el) return;
     updateWLBade();
     if (Storage.count() === 0) {
       el.innerHTML = '<div class="wl-empty"><span class="wl-empty-icon">ðŸ•</span>No saved videos yet.<br>Tap ðŸ• on any video to save it here.</div>';
@@ -1093,16 +1094,8 @@ var App = (function() {
 
   /* ---- Init ---- */
   function init() {
-    var sc = document.getElementById('series-channels');
-    /* noop */ });
-
-    var vc = document.getElementById('video-channels');
-    /* noop */ });
-
     var rc = document.getElementById('retro-channels');
     Data.retro.forEach(function(ch) { UI.buildGroup(ch, 'retro', rc); });
-
-    /* noop */
   }
 
   init();
