@@ -258,6 +258,11 @@ var LV = (function() {
   var sbTimeline = document.getElementById('sb-timeline-wrap');
   var sbProgress = document.getElementById('sb-progress');
 
+  /* ── Pull to refresh ── */
+  var _pullStartY = 0;
+  var _pullThreshold = 80;
+  var _pullActive = false;
+
   /* ── Supported video formats ── */
   var MEDIA_EXTS = /\.(mp4|mkv|webm|mov|avi|m4v|3gp|ts|flv|wmv|mp3|wav|flac|aac|ogg|m4a|opus|wma)$/i;
   var AUDIO_EXTS = /\.(mp3|wav|flac|aac|ogg|m4a|opus|wma)$/i;
@@ -463,6 +468,18 @@ var LV = (function() {
     inp.click();
   }
 
+  function refreshFolder() {
+    loadHandle().then(function(handle) {
+      if (!handle) return;
+      handle.queryPermission({ mode: 'read' }).then(function(status) {
+        if (status !== 'granted') return;
+        scanDir(handle).then(function(files) {
+          loadFiles(files);
+        });
+      });
+    });
+  }
+
   async function scanDir(dirHandle, prefix) {
     var results = [];
     prefix = prefix || '';
@@ -574,20 +591,23 @@ var LV = (function() {
       screen.orientation.lock('landscape').catch(function(){});
     }
 
+    // Request fullscreen on overlay (contains video) after brief delay
+    setTimeout(function() {
+      var fsEl = overlay;
+      if (fsEl.requestFullscreen) {
+        fsEl.requestFullscreen().catch(function(){});
+      } else if (fsEl.webkitRequestFullscreen) {
+        fsEl.webkitRequestFullscreen();
+      } else if (fsEl.msRequestFullscreen) {
+        fsEl.msRequestFullscreen();
+      }
+    }, 100);
+
     onVideoOpen(f, function() {
       if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
         seekPastSponsor();
       }
       videoEl.play().catch(function(){});
-      
-      // Request fullscreen
-      if (videoEl.requestFullscreen) {
-        videoEl.requestFullscreen().catch(function(){});
-      } else if (videoEl.webkitRequestFullscreen) {
-        videoEl.webkitRequestFullscreen();
-      } else if (videoEl.msRequestFullscreen) {
-        videoEl.msRequestFullscreen();
-      }
     });
   }
 
@@ -629,6 +649,10 @@ var LV = (function() {
       document.webkitExitFullscreen();
     } else if (document.msExitFullscreen) {
       document.msExitFullscreen();
+    }
+    // Also try on overlay in case it was the fullscreen element
+    if (overlay && overlay !== document.fullscreenElement) {
+      // no-op, document.exitFullscreen handles it
     }
 
     if (screen.orientation && screen.orientation.unlock) {
@@ -804,6 +828,37 @@ var LV = (function() {
   /* ── Keyboard ── */
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && overlay.classList.contains('active')) close();
+  });
+
+  /* ── Pull to refresh ── */
+  grid.addEventListener('touchstart', function(e) {
+    if (grid.scrollTop === 0) {
+      _pullStartY = e.touches[0].clientY;
+      _pullActive = true;
+    }
+  }, { passive: true });
+
+  grid.addEventListener('touchmove', function(e) {
+    if (!_pullActive || grid.scrollTop > 0) return;
+    var delta = e.touches[0].clientY - _pullStartY;
+    if (delta > 0) {
+      e.preventDefault();
+      grid.style.transform = 'translateY(' + Math.min(delta * 0.5, _pullThreshold) + 'px)';
+      if (delta > _pullThreshold) {
+        grid.style.borderTop = '3px solid var(--lv-hl)';
+      }
+    }
+  }, { passive: false });
+
+  grid.addEventListener('touchend', function() {
+    if (!_pullActive) return;
+    var delta = grid.scrollTop === 0 ? (parseInt(grid.style.transform.replace(/[^0-9.]/g, '')) || 0) * 2 : 0;
+    grid.style.transform = '';
+    grid.style.borderTop = '';
+    _pullActive = false;
+    if (delta >= _pullThreshold) {
+      refreshFolder();
+    }
   });
 
   /* ── Restore previous session ── */
