@@ -748,11 +748,9 @@ var LV = (function() {
       var playPromise = videoEl.play();
       if (playPromise) {
         playPromise.catch(function() {
-          // Fallback: try muted
+          // Fallback: try muted, but DO NOT show unmute banner for user taps
           videoEl.muted = true;
-          videoEl.play().then(function() {
-            showUnmuteBanner();
-          }).catch(function() {});
+          videoEl.play().catch(function() {});
         });
       }
     }
@@ -780,6 +778,10 @@ var LV = (function() {
     var f = _files[idx];
     if (!f || !f.cached) return;
 
+    // Kill any stale unmute banner from previous session
+    hideUnmuteBanner();
+    _userMuted = false;
+
     // Show loading state on the item
     var item = grid.querySelector('[data-idx="' + idx + '"]');
     var playIcon = item ? item.querySelector('.play-icon') : null;
@@ -803,8 +805,13 @@ var LV = (function() {
           _files.forEach(function(x) { x.cached = false; });
           var refreshed = _files.find(function(x) { return x.name === f.name; });
           if (refreshed) {
+            // Force unmuted — user gesture is active
+            videoEl.muted = false;
+            _autoPlayMode = false;
+            _userMuted = false;
+            hideUnmuteBanner();
             play(refreshed.idx);
-            // Ensure unmuted — user tapped, so gesture chain is intact
+            // Double-check after play() — some browsers re-mute on src change
             videoEl.muted = false;
             hideUnmuteBanner();
           }
@@ -1438,6 +1445,11 @@ var LV = (function() {
   var _cachedDirHandle = null;  // live handle when permission granted
 
   (function initRestore() {
+    // Kill any stale unmute banner from a previous session
+    hideUnmuteBanner();
+    var oldBanner = document.getElementById('restore-banner');
+    if (oldBanner) oldBanner.remove();
+
     _rootName = loadRootName();
     updateHeader();
 
