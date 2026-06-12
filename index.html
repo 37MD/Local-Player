@@ -615,11 +615,19 @@ var LV = (function() {
       }
     }, 100);
 
+    // Start playback IMMEDIATELY (preserves user gesture chain for autoplay)
+    var playPromise = videoEl.play();
+    if (playPromise) {
+      playPromise.catch(function() {
+        // Autoplay blocked - user must tap to play
+      });
+    }
+
+    // SponsorBlock fetch in background (non-blocking)
     onVideoOpen(f, function() {
       if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
         seekPastSponsor();
       }
-      videoEl.play().catch(function(){});
     });
   }
 
@@ -647,6 +655,15 @@ var LV = (function() {
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 
+    // Start playback IMMEDIATELY
+    var playPromise = videoEl.play();
+    if (playPromise) {
+      playPromise.catch(function() {
+        // Autoplay blocked
+      });
+    }
+
+    // SponsorBlock fetch in background
     onVideoOpen(f, function() {
       if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
         seekPastSponsor();
@@ -654,7 +671,6 @@ var LV = (function() {
       if (resumeTime > 0 && videoEl.duration && isFinite(videoEl.duration) && resumeTime < videoEl.duration) {
         videoEl.currentTime = resumeTime;
       }
-      videoEl.play().catch(function(){});
     });
   }
 
