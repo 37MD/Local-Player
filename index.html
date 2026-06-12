@@ -162,10 +162,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   display: none; flex-shrink: 0;
   padding: 6px 12px; background: rgba(0,0,0,.88);
   font-size: 11px; color: #e8e8e8; text-align: center; z-index: 10;
-  gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap;
   min-height: 32px;
 }
-#sb-bar.visible { display: flex; }
+#sb-bar.visible { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
 #sb-bar .sb-stat { color: var(--muted); font-size: 10px; }
 #sb-toggle-btn:active { opacity: .75; }
 
@@ -400,7 +399,7 @@ var LV = (function() {
     if (!_filtered.length) return null;
     if (_playedIndices.length >= _filtered.length) _playedIndices = [];
     var available = [];
-    _filtered.forEach(function(f, i) {
+    _filtered.forEach(function(f) {
       if (_playedIndices.indexOf(f.idx) === -1) available.push(f.idx);
     });
     if (!available.length) return null;
@@ -465,6 +464,9 @@ var LV = (function() {
           return { file: f, name: f.name, displayName: f.name, ext: f.name.split('.').pop().toUpperCase(),
                    size: f.size, url: URL.createObjectURL(f) };
         });
+      _rootName = 'Selected Files';
+      storeRootName(_rootName);
+      updateHeader();
       loadFiles(files);
     };
     inp.click();
@@ -482,6 +484,9 @@ var LV = (function() {
           return { file: f, name: f.name, displayName: f.name, ext: f.name.split('.').pop().toUpperCase(),
                    size: f.size, url: URL.createObjectURL(f) };
         });
+      _rootName = 'Selected Files';
+      storeRootName(_rootName);
+      updateHeader();
       loadFiles(files);
     };
     inp.click();
@@ -491,15 +496,31 @@ var LV = (function() {
     loadHandle().then(function(handle) {
       if (!handle) return;
       handle.queryPermission({ mode: 'read' }).then(function(status) {
-        if (status !== 'granted') {
+        if (status === 'granted') {
+          doRefresh(handle);
+        } else if (status === 'prompt') {
+          // Permission can still be requested â€” do so
+          handle.requestPermission({ mode: 'read' }).then(function(newStatus) {
+            if (newStatus === 'granted') {
+              doRefresh(handle);
+            } else {
+              showRefreshToast('âš ï¸ Permission denied â€” tap Open Folder');
+            }
+          }).catch(function() {
+            showRefreshToast('âš ï¸ Permission error â€” tap Open Folder');
+          });
+        } else {
+          // 'denied' â€” user must re-pick folder
           showRefreshToast('âš ï¸ Permission lost â€” tap Open Folder');
-          return;
         }
-        scanDir(handle).then(function(files) {
-          loadFiles(files);
-          showRefreshToast('âœ“ Refreshed â€” ' + files.length + ' file' + (files.length !== 1 ? 's' : ''));
-        });
       });
+    });
+  }
+
+  function doRefresh(handle) {
+    scanDir(handle).then(function(files) {
+      loadFiles(files);
+      showRefreshToast('âœ“ Refreshed â€” ' + files.length + ' file' + (files.length !== 1 ? 's' : ''));
     });
   }
 
@@ -522,16 +543,29 @@ var LV = (function() {
     prefix = prefix || '';
     for await (var entry of dirHandle.values()) {
       if (entry.kind === 'file' && MEDIA_EXTS.test(entry.name)) {
-        var file = await entry.getFile();
-        results.push({
-          file: file, name: entry.name,
-          displayName: prefix ? prefix + '/' + entry.name : entry.name,
-          ext: entry.name.split('.').pop().toUpperCase(),
-          size: file.size, url: URL.createObjectURL(file)
-        });
+        try {
+          var file = await entry.getFile();
+          results.push({
+            file: file, name: entry.name,
+            displayName: prefix ? prefix + '/' + entry.name : entry.name,
+            ext: entry.name.split('.').pop().toUpperCase(),
+            size: file.size, url: URL.createObjectURL(file)
+          });
+        } catch(e) {} // skip unreadable files silently
       } else if (entry.kind === 'directory') {
-        var sub = await scanDir(entry, prefix ? prefix + '/' + entry.name : entry.name);
-        results = results.concat(sub);
+        try {
+          // Check/request permission on each subdir â€” subdirs do NOT
+          // automatically inherit permission from the root handle on Android.
+          // Without this, entry.values() silently hangs forever.
+          var perm = await entry.queryPermission({ mode: 'read' });
+          if (perm !== 'granted') {
+            perm = await entry.requestPermission({ mode: 'read' });
+          }
+          if (perm === 'granted') {
+            var sub = await scanDir(entry, prefix ? prefix + '/' + entry.name : entry.name);
+            results = results.concat(sub);
+          }
+        } catch(e) {} // skip inaccessible subdirs silently
       }
     }
     return results;
@@ -636,18 +670,15 @@ var LV = (function() {
     document.body.style.overflow = 'hidden';
 
     // Try to lock orientation to landscape (respects system lock)
-    var orientationLocked = false;
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock('landscape')
-        .then(function() { orientationLocked = true; })
         .catch(function() {
           // System orientation lock is ON - show hint
           showOrientationHint();
         });
     } else if (screen.lockOrientation) {
       // Legacy API
-      orientationLocked = screen.lockOrientation('landscape');
-      if (!orientationLocked) showOrientationHint();
+      if (!screen.lockOrientation('landscape')) showOrientationHint();
     }
 
     // Start playback IMMEDIATELY (preserves user gesture chain for autoplay)
@@ -798,20 +829,20 @@ var LV = (function() {
     var deltaY = _gestureStartY - touch.clientY; // up = positive = increase
     if (_gestureActive === 'brightness') {
       // Brightness range: 0.3 to 2.0 (span = 1.7), mapped to screen height
-      var sensitivity = 1.7 / screenH;
-      var next = Math.max(0.3, Math.min(2.0, _gestureStartVal + deltaY * sensitivity));
-      _brightnessVal = next;
-      videoEl.style.filter = 'brightness(' + next.toFixed(2) + ')';
-      var pct = Math.round(((next - 0.3) / 1.7) * 100);
+      var bSensitivity = 1.7 / screenH;
+      var bNext = Math.max(0.3, Math.min(2.0, _gestureStartVal + deltaY * bSensitivity));
+      _brightnessVal = bNext;
+      videoEl.style.filter = 'brightness(' + bNext.toFixed(2) + ')';
+      var pct = Math.round(((bNext - 0.3) / 1.7) * 100);
       showGestureHUD('\u2600\ufe0f ' + pct + '%');
     } else if (_gestureActive === 'volume') {
       // Volume range: 0 to 1.0, mapped to screen height
-      var sensitivity = 1.0 / screenH;
-      var next = Math.max(0, Math.min(1, _gestureStartVal + deltaY * sensitivity));
-      videoEl.volume = next;
-      videoEl.muted = (next === 0);
-      var icon = next === 0 ? '\uD83D\uDD07' : next < 0.4 ? '\uD83D\uDD08' : next < 0.75 ? '\uD83D\uDD09' : '\uD83D\uDD0A';
-      showGestureHUD(icon + ' ' + Math.round(next * 100) + '%');
+      var vSensitivity = 1.0 / screenH;
+      var vNext = Math.max(0, Math.min(1, _gestureStartVal + deltaY * vSensitivity));
+      videoEl.volume = vNext;
+      videoEl.muted = (vNext === 0);
+      var icon = vNext === 0 ? '\uD83D\uDD07' : vNext < 0.4 ? '\uD83D\uDD08' : vNext < 0.75 ? '\uD83D\uDD09' : '\uD83D\uDD0A';
+      showGestureHUD(icon + ' ' + Math.round(vNext * 100) + '%');
     }
   }
 
@@ -1070,7 +1101,7 @@ var LV = (function() {
 
   /* â”€â”€ Timeline seek events â”€â”€ */
   sbTimeline.addEventListener('click', seekTimeline);
-  sbTimeline.addEventListener('touchstart', function(e) { seekTimeline(e); }, { passive: true });
+  sbTimeline.addEventListener('touchstart', function(e) { e.preventDefault(); seekTimeline(e); }, { passive: false });
 
   /* â”€â”€ Utils â”€â”€ */
   function esc(s) {
@@ -1220,10 +1251,9 @@ var LV = (function() {
     updateHeader();
     scanDir(handle).then(function(files) {
       loadFiles(files);
-      var state = loadState();
-      if (state.idx !== null && state.idx < _files.length) {
-        setTimeout(function() { playAt(state.idx, state.time); }, 300);
-      }
+      // Do NOT auto-open the player on restore â€” that requires a user gesture
+      // and would be jarring. The last-played file is remembered in state for
+      // the user to tap manually if they want to resume.
     });
   }
 
