@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <title>Local Player</title>
 <style>
-/* â”€â”€ Reset & Base â”€â”€ */
+/* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg:        #0f0f0f;
@@ -30,7 +30,7 @@
 }
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; overscroll-behavior: none; }
 
-/* â”€â”€ Header â”€â”€ */
+/* &#9472;&#9472; Header &#9472;&#9472; */
 .app-header {
   background: linear-gradient(135deg, #1a2a4a 0%, #0d1a30 100%);
   padding: 14px 16px 12px;
@@ -39,7 +39,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .app-header h1 { font-size: 20px; font-weight: 900; color: var(--lv-hl); letter-spacing: .04em; }
 .app-header p  { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
 
-/* â”€â”€ Controls â”€â”€ */
+/* &#9472;&#9472; Controls &#9472;&#9472; */
 .controls {
   display: flex; gap: 8px; align-items: center;
   padding: 10px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
@@ -65,7 +65,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   padding: 0 4px;
 }
 
-/* â”€â”€ File Grid â”€â”€ */
+/* &#9472;&#9472; File Grid &#9472;&#9472; */
 .file-list {
   overflow-y: auto; max-height: calc(100vh - 180px);
 }
@@ -91,7 +91,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 }
 .file-item-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-/* â”€â”€ Empty / Error states â”€â”€ */
+/* &#9472;&#9472; Empty / Error states &#9472;&#9472; */
 .state-msg {
   text-align: center; padding: 60px 24px; color: var(--muted);
   display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -100,23 +100,33 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .state-msg h2 { font-size: 18px; color: var(--text); font-weight: 700; }
 .state-msg p  { font-size: 13px; line-height: 1.5; }
 
-/* â”€â”€ Player Overlay â”€â”€ */
+/* &#9472;&#9472; Player Overlay &#9472;&#9472; */
+/* MIUI/HyperOS: use viewport-fit=cover + safe-area insets for notch/punch-hole */
 #player-overlay {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-  display: none; position: fixed; inset: 0; z-index: 9999;
-  background: #000; flex-direction: column;
+  display: none; position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9999; background: #000;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 #player-overlay.active { display: flex; }
+/* Native fullscreen: stretch edge-to-edge, remove safe-area padding */
+#player-overlay:-webkit-full-screen,
+#player-overlay:fullscreen {
+  padding: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
 .player-topbar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; background: rgba(0,0,0,.85);
   position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-  padding-top: env(safe-area-inset-top, 8px);
-  padding-left: env(safe-area-inset-left, 12px);
-  padding-right: env(safe-area-inset-right, 12px);
+  padding-top: max(8px, env(safe-area-inset-top, 8px));
+  padding-left: max(12px, env(safe-area-inset-left, 12px));
+  padding-right: max(12px, env(safe-area-inset-right, 12px));
 }
 .btn-close {
   padding: 10px 16px; background: var(--danger); color: #fff;
@@ -134,11 +144,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   display: flex; align-items: center; justify-content: center;
 }
 #local-video {
+  /* No fixed aspect-ratio &#8212; fill flex space naturally in portrait and landscape */
   width: 100%; flex: 1; min-height: 0; object-fit: contain; background: #000;
-  aspect-ratio: 20 / 9;
 }
+/* In native fullscreen the video IS the fullscreen element &#8212; fill everything */
+#local-video:-webkit-full-screen { width: 100vw; height: 100vh; object-fit: contain; }
+#local-video:fullscreen          { width: 100vw; height: 100vh; object-fit: contain; }
 
-/* â”€â”€ SponsorBlock timeline â”€â”€ */
+/* &#9472;&#9472; SponsorBlock timeline &#9472;&#9472; */
 #sb-timeline-wrap {
   position: relative; width: 100%; height: 8px;
   background: rgba(255,255,255,.12); cursor: pointer;
@@ -157,7 +170,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   border-radius: 2px;
 }
 
-/* â”€â”€ SponsorBlock bar â”€â”€ */
+/* &#9472;&#9472; SponsorBlock bar &#9472;&#9472; */
 #sb-bar {
   display: none; flex-shrink: 0;
   padding: 6px 12px; background: rgba(0,0,0,.88);
@@ -168,12 +181,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 #sb-bar .sb-stat { color: var(--muted); font-size: 10px; }
 #sb-toggle-btn:active { opacity: .75; }
 
-/* â”€â”€ Scrollbar â”€â”€ */
+/* &#9472;&#9472; Scrollbar &#9472;&#9472; */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-/* â”€â”€ PWA Install badge â”€â”€ */
+/* &#9472;&#9472; PWA Install badge &#9472;&#9472; */
 #pwa-badge {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
   z-index: 99999; background: var(--lv-hl); color: #fff; font-weight: 700;
@@ -188,59 +201,59 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <body>
 
 <div class="app-header">
-  <h1>ðŸ“± Local Player</h1>
-  <p>Videos & Songs Â· Phone Storage Â· No Network</p>
+  <h1>&#128241; Local Player</h1>
+  <p>Videos & Songs &#183; Phone Storage &#183; No Network</p>
 </div>
 
 <div class="controls">
-  <button class="btn btn-pick" onclick="LV.pickFolder()">ðŸ“‚ Open Folder</button>
-  <input class="search-box" type="search" placeholder="ðŸ” Searchâ€¦" oninput="LV.search(this.value)" id="lv-search">
-  <button class="btn btn-sort" onclick="LV.playAll()" id="lv-playall-btn">â–¶ Play All</button>
-  <button class="btn btn-sort" onclick="LV.toggleSort()" id="lv-sort-btn">â‡… Name</button>
-  <button class="btn btn-sort" onclick="LV.toggleShuffle()" id="lv-shuffle-btn">ðŸ”€ Off</button>
+  <button class="btn btn-pick" onclick="LV.pickFolder()">&#128194; Open Folder</button>
+  <input class="search-box" type="search" placeholder="&#128269; Search&#8230;" oninput="LV.search(this.value)" id="lv-search">
+  <button class="btn btn-sort" onclick="LV.playAll()" id="lv-playall-btn">&#9654; Play All</button>
+  <button class="btn btn-sort" onclick="LV.toggleSort()" id="lv-sort-btn">&#8645; Name</button>
+  <button class="btn btn-sort" onclick="LV.toggleShuffle()" id="lv-shuffle-btn">&#128256; Off</button>
   <span class="count-badge" id="lv-count"></span>
 </div>
 
 <div id="lv-grid" class="file-list">
   <div class="state-msg">
-    <div class="icon">ðŸ“‚</div>
+    <div class="icon">&#128194;</div>
     <h2>No folder open</h2>
-    <p>Tap <strong>Open Folder</strong> to pick your video folder from phone storage.<br>Plays entirely offline â€” no network needed.</p>
+    <p>Tap <strong>Open Folder</strong> to pick your video folder from phone storage.<br>Plays entirely offline &#8212; no network needed.</p>
   </div>
 </div>
 
 <!-- Player Overlay -->
 <div id="player-overlay">
   <div class="player-topbar">
-    <button class="btn-close" onclick="LV.close()">âœ• Close</button>
-    <span class="player-ttl" id="lv-player-title">Loadingâ€¦</span>
-    <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">â®</button>
-    <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">â­</button>
+    <button class="btn-close" onclick="LV.close()">&#10005; Close</button>
+    <span class="player-ttl" id="lv-player-title">Loading&#8230;</span>
+    <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">&#9198;</button>
+    <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">&#9197;</button>
   </div>
-  <video id="local-video" playsinline muted preload="metadata"></video>
+  <video id="local-video" playsinline preload="metadata"></video>
   <div id="sb-timeline-wrap"><div class="sb-progress" id="sb-progress"></div></div>
   <div id="sb-bar"></div>
 </div>
 
-<div id="pwa-badge" onclick="LV.installPWA()">â¬‡ Install App</div>
+<div id="pwa-badge" onclick="LV.installPWA()">&#11015; Install App</div>
 
 <script>
 /* =====================================================================
-   LOCAL PLAYER â€” Standalone app
+   LOCAL PLAYER \u2014 Standalone app
    Sandbox: completely self-contained, zero shared code.
    Player: <video>/<audio> element, no iframe, no CORS, no network for playback.
    SponsorBlock: placeholder #sb-bar ready for integration.
    ===================================================================== */
 var LV = (function() {
 
-  /* â”€â”€ Config â”€â”€ */
+  /* \u2500\u2500 Config \u2500\u2500 */
   var CONFIG = {
     dbName: 'LocalVideosDB',
     storeName: 'session',
     version: 1
   };
 
-  /* â”€â”€ State â”€â”€ */
+  /* \u2500\u2500 State \u2500\u2500 */
   var _files      = [];
   var _filtered   = [];
   var _sortMode   = 'name';  // 'name' | 'date' | 'size'
@@ -250,8 +263,9 @@ var LV = (function() {
   var _playedIndices = [];
   var _saveTimer  = null;
   var _autoPlayMode = false; // true when Play All / shuffle auto-advance
+  var _userMuted    = false; // true when user explicitly muted via unmute banner
 
-  /* â”€â”€ DOM refs â”€â”€ */
+  /* \u2500\u2500 DOM refs \u2500\u2500 */
   var grid      = document.getElementById('lv-grid');
   var overlay   = document.getElementById('player-overlay');
   var videoEl   = document.getElementById('local-video');
@@ -263,25 +277,25 @@ var LV = (function() {
   var sbTimeline = document.getElementById('sb-timeline-wrap');
   var sbProgress = document.getElementById('sb-progress');
 
-  /* â”€â”€ Pull to refresh â”€â”€ */
+  /* \u2500\u2500 Pull to refresh \u2500\u2500 */
   var _pullStartY    = 0;
   var _pullThreshold = 70;
   var _pullActive    = false;
   var _pullDelta     = 0;      // track delta independently, not from transform string
   var _pullIndicator = null;   // spinner element
 
-  /* â”€â”€ Gesture controls (brightness/volume) â”€â”€ */
+  /* \u2500\u2500 Gesture controls (brightness/volume) \u2500\u2500 */
   var _gestureActive = null; // 'brightness' | 'volume'
   var _gestureStartY = 0;
   var _gestureStartVal = 0;
   var _brightnessOverlay = null;
   var _volumeOverlay = null;
 
-  /* â”€â”€ Supported video formats â”€â”€ */
+  /* \u2500\u2500 Supported video formats \u2500\u2500 */
   var MEDIA_EXTS = /\.(mp4|mkv|webm|mov|avi|m4v|3gp|ts|flv|wmv|mp3|wav|flac|aac|ogg|m4a|opus|wma)$/i;
   var AUDIO_EXTS = /\.(mp3|wav|flac|aac|ogg|m4a|opus|wma)$/i;
 
-  /* â”€â”€ Format file size â”€â”€ */
+  /* \u2500\u2500 Format file size \u2500\u2500 */
   function fmtSize(bytes) {
     if (!bytes) return '';
     if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
@@ -289,10 +303,10 @@ var LV = (function() {
     return (bytes/1e3).toFixed(0) + ' KB';
   }
 
-  /* â”€â”€ Audio detection â”€â”€ */
+  /* \u2500\u2500 Audio detection \u2500\u2500 */
   function isAudio(name) { return AUDIO_EXTS.test(name); }
 
-  /* â”€â”€ Format duration â”€â”€ */
+  /* \u2500\u2500 Format duration \u2500\u2500 */
   function fmtDuration(secs) {
     if (!secs || isNaN(secs)) return '';
     var h = Math.floor(secs/3600);
@@ -302,7 +316,7 @@ var LV = (function() {
     return m + ':' + String(s).padStart(2,'0');
   }
 
-  /* â”€â”€ IndexedDB persistence â”€â”€ */
+  /* \u2500\u2500 IndexedDB persistence \u2500\u2500 */
   function openDB() {
     return new Promise(function(resolve, reject) {
       var req = indexedDB.open(CONFIG.dbName, CONFIG.version);
@@ -320,7 +334,7 @@ var LV = (function() {
     openDB().then(function(db) {
       var tx = db.transaction(CONFIG.storeName, 'readwrite');
       var req = tx.objectStore(CONFIG.storeName).put(handle, 'dirHandle');
-      req.onerror = function() {}; // silent fail â€” not critical
+      req.onerror = function() {}; // silent fail \u2014 not critical
     }).catch(function(){});
   }
 
@@ -345,10 +359,10 @@ var LV = (function() {
 
   function updateHeader() {
     var h = document.querySelector('.app-header h1');
-    if (h) h.textContent = _rootName ? 'ðŸ“ ' + _rootName : 'ðŸ“± Local Player';
+    if (h) h.textContent = _rootName ? '\uD83D\uDCC1 ' + _rootName : '\uD83D\uDCF1 Local Player';
   }
 
-  /* â”€â”€ Playback persistence â”€â”€ */
+  /* \u2500\u2500 Playback persistence \u2500\u2500 */
   function saveState() {
     try {
       if (_currentIdx !== null) localStorage.setItem('lv_idx', _currentIdx);
@@ -365,11 +379,11 @@ var LV = (function() {
     } catch(e) { return { idx: null, time: 0 }; }
   }
 
-  /* â”€â”€ Shuffle â”€â”€ */
+  /* \u2500\u2500 Shuffle \u2500\u2500 */
   function toggleShuffle() {
     _shuffleMode = !_shuffleMode;
     _playedIndices = [];
-    shuffleBtn.textContent = _shuffleMode ? 'ðŸ”€ On' : 'ðŸ”€ Off';
+    shuffleBtn.textContent = _shuffleMode ? '\uD83D\uDD00 On' : '\uD83D\uDD00 Off';
     shuffleBtn.className = 'btn ' + (_shuffleMode ? 'btn-on' : 'btn-sort');
   }
 
@@ -390,7 +404,7 @@ var LV = (function() {
     _shuffleMode = false;
     _playedIndices = [];
     _autoPlayMode = true;
-    shuffleBtn.textContent = 'ðŸ”€ Off';
+    shuffleBtn.textContent = '\uD83D\uDD00 Off';
     shuffleBtn.className = 'btn btn-sort';
     play(idx, true);
   }
@@ -426,7 +440,7 @@ var LV = (function() {
     play(idx, true);
   }
 
-  /* â”€â”€ Pick folder â”€â”€ */
+  /* \u2500\u2500 Pick folder \u2500\u2500 */
   function pickFolder() {
     /* file:// protocol kills showDirectoryPicker (needs HTTPS).
        Try it only on secure contexts; fall back to webkitdirectory,
@@ -499,19 +513,19 @@ var LV = (function() {
         if (status === 'granted') {
           doRefresh(handle);
         } else if (status === 'prompt') {
-          // Permission can still be requested â€” do so
+          // Permission can still be requested \u2014 do so
           handle.requestPermission({ mode: 'read' }).then(function(newStatus) {
             if (newStatus === 'granted') {
               doRefresh(handle);
             } else {
-              showRefreshToast('âš ï¸ Permission denied â€” tap Open Folder');
+              showRefreshToast('\u26A0\uFE0F Permission denied \u2014 tap Open Folder');
             }
           }).catch(function() {
-            showRefreshToast('âš ï¸ Permission error â€” tap Open Folder');
+            showRefreshToast('\u26A0\uFE0F Permission error \u2014 tap Open Folder');
           });
         } else {
-          // 'denied' â€” user must re-pick folder
-          showRefreshToast('âš ï¸ Permission lost â€” tap Open Folder');
+          // 'denied' \u2014 user must re-pick folder
+          showRefreshToast('\u26A0\uFE0F Permission lost \u2014 tap Open Folder');
         }
       });
     });
@@ -520,7 +534,7 @@ var LV = (function() {
   function doRefresh(handle) {
     scanDir(handle).then(function(files) {
       loadFiles(files);
-      showRefreshToast('âœ“ Refreshed â€” ' + files.length + ' file' + (files.length !== 1 ? 's' : ''));
+      showRefreshToast('\u2713 Refreshed \u2014 ' + files.length + ' file' + (files.length !== 1 ? 's' : ''));
     });
   }
 
@@ -554,7 +568,7 @@ var LV = (function() {
         } catch(e) {} // skip unreadable files silently
       } else if (entry.kind === 'directory') {
         try {
-          // Check/request permission on each subdir â€” subdirs do NOT
+          // Check/request permission on each subdir \u2014 subdirs do NOT
           // automatically inherit permission from the root handle on Android.
           // Without this, entry.values() silently hangs forever.
           var perm = await entry.queryPermission({ mode: 'read' });
@@ -571,7 +585,7 @@ var LV = (function() {
     return results;
   }
 
-  /* â”€â”€ Load files into state â”€â”€ */
+  /* \u2500\u2500 Load files into state \u2500\u2500 */
   function loadFiles(files) {
     // Revoke old blob URLs to free memory before replacing list
     _files.forEach(function(f) {
@@ -585,7 +599,7 @@ var LV = (function() {
     renderGrid(_filtered);
   }
 
-  /* â”€â”€ Sort â”€â”€ */
+  /* \u2500\u2500 Sort \u2500\u2500 */
   function sortFiles() {
     _filtered = _files.slice();
     var q = (document.getElementById('lv-search') || {}).value || '';
@@ -604,7 +618,7 @@ var LV = (function() {
 
   function toggleSort() {
     var modes = ['name','size','date'];
-    var labels = { name: 'â‡… Name', size: 'â‡… Size', date: 'â‡… Date' };
+    var labels = { name: '\u21C5 Name', size: '\u21C5 Size', date: '\u21C5 Date' };
     var idx = modes.indexOf(_sortMode);
     _sortMode = modes[(idx+1) % modes.length];
     sortBtn.textContent = labels[_sortMode];
@@ -617,15 +631,15 @@ var LV = (function() {
     renderGrid(_filtered);
   }
 
-  /* â”€â”€ Render list â”€â”€ */
+  /* \u2500\u2500 Render list \u2500\u2500 */
   function renderGrid(files) {
     var allAudio = files.length && files.every(function(f) { return isAudio(f.name); });
     var label = allAudio ? 'song' : 'media';
     countEl.textContent = files.length + ' ' + label + (files.length !== 1 ? 's' : '');
     if (files.length === 0) {
       grid.innerHTML = _files.length === 0
-        ? '<div class="state-msg"><div class="icon">ðŸ“‚</div><h2>No folder open</h2><p>Tap <strong>Open Folder</strong> to load your media.</p></div>'
-        : '<div class="state-msg"><div class="icon">ðŸ”</div><h2>No results</h2><p>No media match your search.</p></div>';
+        ? '<div class="state-msg"><div class="icon">\uD83D\uDCC2</div><h2>No folder open</h2><p>Tap <strong>Open Folder</strong> to load your media.</p></div>'
+        : '<div class="state-msg"><div class="icon">\uD83D\uDD0D</div><h2>No results</h2><p>No media match your search.</p></div>';
       return;
     }
     grid.innerHTML = '';
@@ -635,11 +649,11 @@ var LV = (function() {
       item.dataset.idx = f.idx;
 
       var nameNoExt = f.name.replace(/\.[^.]+$/, '');
-      var meta = f.ext + (f.size ? ' Â· ' + fmtSize(f.size) : '');
+      var meta = f.ext + (f.size ? ' \u00B7 ' + fmtSize(f.size) : '');
       var isAud = isAudio(f.name);
 
       item.innerHTML =
-        '<span class="play-icon' + (isAud ? ' audio' : '') + '">' + (isAud ? 'ðŸŽµ' : 'â–¶') + '</span>' +
+        '<span class="play-icon' + (isAud ? ' audio' : '') + '">' + (isAud ? '\uD83C\uDFB5' : '\u25B6') + '</span>' +
         '<div class="file-item-info">' +
           '<div class="file-item-name">' + esc(nameNoExt) + '</div>' +
           '<div class="file-item-meta">' + esc(meta) + '</div>' +
@@ -650,7 +664,7 @@ var LV = (function() {
     });
   }
 
-  /* â”€â”€ Play â”€â”€ */
+  /* \u2500\u2500 Play \u2500\u2500 */
   function play(idx, autoPlay) {
     var f = _files[idx];
     if (!f) return;
@@ -658,51 +672,65 @@ var LV = (function() {
     saveState();
 
     // If user manually clicks a video (not auto-advance), disable auto-play mode
-    if (autoPlay !== true) _autoPlayMode = false;
+    if (autoPlay !== true) {
+      _autoPlayMode = false;
+      hideUnmuteBanner(); // user has a gesture \u2014 no need for muted banner
+      _userMuted = false;
+    }
 
     titleEl.textContent = f.name.replace(/\.[^.]+$/, '');
     videoEl.src = f.url;
-    videoEl.load();
+    // Do NOT call videoEl.load() — it resets the muted attribute from the HTML
+    // and breaks the gesture chain needed for autoplay. Setting .src is enough;
+    // the browser loads automatically when play() is called.
     videoEl.style.filter = '';  // reset brightness on new file
     _brightnessVal = 1.0;
 
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 
-    // Try to lock orientation to landscape (respects system lock)
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape')
-        .catch(function() {
-          // System orientation lock is ON - show hint
-          showOrientationHint();
+    // Autoplay strategy:
+    // - Video 1 (user gesture): unmute immediately \u2014 gesture chain is intact.
+    // - Videos 2+ (auto-advance from 'ended' event): keep muted \u2014 no gesture,
+    //   so unmuted autoplay is blocked on Android Chrome/MIUI. Show an unmute
+    //   banner instead so the user taps once to restore sound for the session.
+    if (autoPlay === true && _autoPlayMode) {
+      // Auto-advance: play muted to guarantee playback, show unmute banner
+      videoEl.muted = true;
+      var playPromise = videoEl.play();
+      if (playPromise) {
+        playPromise.then(function() {
+          if (!_userMuted) showUnmuteBanner();
+        }).catch(function(err) {
+          // Even muted play blocked \u2014 extremely rare, show tap-to-play hint
+          showTapToPlayHint();
         });
-    } else if (screen.lockOrientation) {
-      // Legacy API
-      if (!screen.lockOrientation('landscape')) showOrientationHint();
+      }
+    } else {
+      // User-initiated: gesture chain intact \u2014 play unmuted directly
+      videoEl.muted = false;
+      var playPromise = videoEl.play();
+      if (playPromise) {
+        playPromise.catch(function() {
+          // Fallback: try muted
+          videoEl.muted = true;
+          videoEl.play().then(function() {
+            showUnmuteBanner();
+          }).catch(function() {});
+        });
+      }
     }
 
-    // Start playback IMMEDIATELY (preserves user gesture chain for autoplay)
-    videoEl.muted = true;
-    var playPromise = videoEl.play();
-    if (playPromise) {
-      playPromise.then(function() {
-        // Unmute after autoplay succeeds
-        videoEl.muted = false;
-      }).catch(function() {
-        // Autoplay blocked - user must tap to play
-        videoEl.muted = false;
-      });
-    }
-
-    // Request fullscreen on video element immediately (within same gesture chain)
-    var fsEl = videoEl;
-    if (fsEl.requestFullscreen) {
-      fsEl.requestFullscreen().catch(function(){});
-    } else if (fsEl.webkitRequestFullscreen) {
-      fsEl.webkitRequestFullscreen();
-    } else if (fsEl.msRequestFullscreen) {
-      fsEl.msRequestFullscreen();
-    }
+    // MIUI/HyperOS (Poco M6 Pro 5G) fullscreen + orientation strategy:
+    //   1. Fullscreen must be called on the OVERLAY DIV, not the <video>.
+    //      On MIUI Chrome, video.requestFullscreen() hijacks to the system player,
+    //      losing all our custom controls.
+    //   2. screen.orientation.lock() must be called INSIDE the fullscreen .then()
+    //      callback \u2014 calling it before fullscreen resolves is silently ignored on MIUI.
+    //   3. 'landscape' (not 'landscape-primary') for broadest MIUI version compat.
+    //   4. Fallback: if fullscreen is denied (file:// or iframe), use CSS transform
+    //      to rotate the overlay manually into landscape.
+    requestFullscreenAndLock(overlay);
 
     // Setup gesture controls (brightness left 30%, volume right 30%)
     setupGestureControls();
@@ -714,16 +742,150 @@ var LV = (function() {
   function showOrientationHint() {
     var hint = document.createElement('div');
     hint.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);color:#fff;padding:20px 30px;border-radius:12px;z-index:10000;font-size:16px;text-align:center;max-width:90%';
-    hint.innerHTML = 'ðŸ”“ <strong>Unlock screen rotation</strong> in system settings<br>for fullscreen landscape video';
+    hint.innerHTML = '\ud83d\udd04 Rotate phone to landscape for best view';
     document.body.appendChild(hint);
     setTimeout(function() {
       hint.style.opacity = '0';
       hint.style.transition = 'opacity 0.5s';
       setTimeout(function() { hint.remove(); }, 500);
-    }, 4000);
+    }, 3000);
   }
 
-  /* â”€â”€ Gesture controls: brightness (left 30%), volume (right 30%) â”€â”€ */
+  /* \u2500\u2500 Unmute banner (shown on auto-advance when gesture chain is broken) \u2500\u2500 */
+  var _unmuteBanner = null;
+  function showUnmuteBanner() {
+    if (_unmuteBanner) return; // already showing
+    _unmuteBanner = document.createElement('div');
+    _unmuteBanner.style.cssText = [
+      'position:fixed;bottom:80px;left:50%;transform:translateX(-50%)',
+      'z-index:10020;background:rgba(0,0,0,0.88);color:#fff',
+      'font-size:15px;font-weight:700;padding:12px 24px',
+      'border-radius:24px;cursor:pointer;border:2px solid var(--lv-hl)',
+      'touch-action:manipulation;-webkit-tap-highlight-color:transparent',
+      'white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5)'
+    ].join(';');
+    _unmuteBanner.textContent = '\uD83D\uDD07 Tap to unmute';
+    _unmuteBanner.addEventListener('click', function() {
+      videoEl.muted = false;
+      _userMuted = false;
+      if (_unmuteBanner) { _unmuteBanner.remove(); _unmuteBanner = null; }
+    });
+    document.body.appendChild(_unmuteBanner);
+  }
+
+  function hideUnmuteBanner() {
+    if (_unmuteBanner) { _unmuteBanner.remove(); _unmuteBanner = null; }
+  }
+
+  function showTapToPlayHint() {
+    var hint = document.createElement('div');
+    hint.style.cssText = [
+      'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%)',
+      'z-index:10020;background:rgba(0,0,0,0.9);color:#fff',
+      'font-size:16px;font-weight:700;padding:20px 30px',
+      'border-radius:12px;cursor:pointer;text-align:center',
+      'touch-action:manipulation;-webkit-tap-highlight-color:transparent'
+    ].join(';');
+    hint.innerHTML = '\u25B6\uFE0F Tap to play';
+    hint.addEventListener('click', function() {
+      videoEl.muted = false;
+      videoEl.play().catch(function(){});
+      hint.remove();
+    });
+    document.body.appendChild(hint);
+    setTimeout(function() { if (hint.parentNode) hint.remove(); }, 5000);
+  }
+
+  /* \u2500\u2500 Fullscreen + orientation lock (MIUI/HyperOS aware) \u2500\u2500 */
+  function requestFullscreenAndLock(el) {
+    var fsPromise = null;
+    if (el.requestFullscreen) {
+      fsPromise = el.requestFullscreen();
+    } else if (el.webkitRequestFullscreen) {
+      el.webkitRequestFullscreen();
+      fsPromise = Promise.resolve();
+    }
+    if (fsPromise && typeof fsPromise.then === 'function') {
+      fsPromise.then(function() {
+        lockLandscape(); // MIUI: lock AFTER fullscreen resolves, not before
+      }).catch(function() {
+        cssLandscapeFallback(); // fullscreen denied \u2014 CSS rotate instead
+      });
+    } else if (!fsPromise) {
+      cssLandscapeFallback();
+    }
+  }
+
+  function lockLandscape() {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(function() {
+        showOrientationHint(); // system lock is ON \u2014 still fullscreen, just hint
+      });
+    } else if (screen.mozLockOrientation) {
+      screen.mozLockOrientation('landscape');
+    } else if (screen.msLockOrientation) {
+      screen.msLockOrientation('landscape');
+    }
+  }
+
+  // CSS fallback: rotate overlay 90 degrees when native fullscreen is unavailable
+  var _cssLandscapeActive = false;
+  function cssLandscapeFallback() {
+    _cssLandscapeActive = true;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (w < h) { // portrait \u2014 apply rotation
+      overlay.style.cssText = [
+        'position:fixed;top:0;left:0;z-index:9999;background:#000',
+        'width:' + h + 'px',
+        'height:' + w + 'px',
+        'transform:rotate(90deg) translateY(-' + w + 'px)',
+        'transform-origin:top left',
+        'display:flex;flex-direction:column'
+      ].join(';');
+    }
+    showOrientationHint();
+  }
+
+  function exitFullscreenAndUnlock() {
+    if (_cssLandscapeActive) {
+      overlay.style.cssText = '';
+      _cssLandscapeActive = false;
+      return;
+    }
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(function(){});
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    } else if (screen.mozUnlockOrientation) {
+      screen.mozUnlockOrientation();
+    } else if (screen.msUnlockOrientation) {
+      screen.msUnlockOrientation();
+    }
+  }
+
+  // Resize handler: keep CSS-rotated overlay correct if window size changes
+  window.addEventListener('resize', function() {
+    if (!_cssLandscapeActive) return;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (w < h) {
+      overlay.style.width  = h + 'px';
+      overlay.style.height = w + 'px';
+      overlay.style.transform = 'rotate(90deg) translateY(-' + w + 'px)';
+    } else {
+      overlay.style.width = '';
+      overlay.style.height = '';
+      overlay.style.transform = '';
+    }
+  });
+
+  /* \u2500\u2500 Gesture controls: brightness (left 30%), volume (right 30%) \u2500\u2500 */
   var _gestureHUD = null;
   var _brightnessVal = 1.0; // track brightness independently
 
@@ -752,7 +914,7 @@ var LV = (function() {
     // Re-show zones (hidden during teardown)
     showGestureZones();
 
-    // Only attach listeners once â€” teardown removes them, so re-add each time
+    // Only attach listeners once \u2014 teardown removes them, so re-add each time
     _brightnessOverlay.addEventListener('touchstart', onGestureStart, { passive: false });
     _brightnessOverlay.addEventListener('touchmove',  onGestureMove,  { passive: false });
     _brightnessOverlay.addEventListener('touchend',   onGestureEnd,   { passive: false });
@@ -862,7 +1024,7 @@ var LV = (function() {
     _gestureHUD.style.display = 'block';
   }
 
-  /* â”€â”€ Play at idx with optional resume time (used by session restore) â”€â”€ */
+  /* \u2500\u2500 Play at idx with optional resume time (used by session restore) \u2500\u2500 */
   function playAt(idx, resumeTime) {
     if (!_files[idx]) return;
     // Delegate to main play() for consistency, then seek to resume time after load
@@ -875,7 +1037,7 @@ var LV = (function() {
     }
   }
 
-  /* â”€â”€ Close player â”€â”€ */
+  /* \u2500\u2500 Close player \u2500\u2500 */
   function close() {
     saveState();
     videoEl.pause();
@@ -886,28 +1048,19 @@ var LV = (function() {
     // Teardown gesture controls
     teardownGestureControls();
 
-    // Exit fullscreen
-    if (document.exitFullscreen) {
-      document.exitFullscreen().catch(function(){});
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    }
+    // Hide unmute banner if showing
+    hideUnmuteBanner();
+    _userMuted = false;
 
-    // Unlock orientation if we locked it
-    if (screen.orientation && screen.orientation.unlock) {
-      screen.orientation.unlock();
-    } else if (screen.unlockOrientation) {
-      screen.unlockOrientation();
-    }
+    // Exit fullscreen and unlock orientation (handles both native and CSS fallback)
+    exitFullscreenAndUnlock();
 
     _autoPlayMode = false;
 
     onVideoClose();
   }
 
-  /* â”€â”€ SponsorBlock â”€â”€ */
+  /* \u2500\u2500 SponsorBlock \u2500\u2500 */
   var _sbSegments    = [];
   var _sbAutoSkip    = true;   // user-toggleable
   var _sbSkipped     = 0;
@@ -943,7 +1096,7 @@ var LV = (function() {
   // Only extract YouTube IDs from the strict pattern: [xxxxx] or (xxxxx) in filename
   // Avoids false matches on regular song filenames
   function extractVideoId(name) {
-    // Must be inside brackets/parens/braces â€” never bare in a music filename
+    // Must be inside brackets/parens/braces \u2014 never bare in a music filename
     var m = name.match(/[\[\(\{]([a-zA-Z0-9_-]{11})[\]\)\}]/);
     return m ? m[1] : null;
   }
@@ -976,7 +1129,7 @@ var LV = (function() {
       el.style.left       = (start / duration * 100) + '%';
       el.style.width      = ((end - start) / duration * 100) + '%';
       el.style.background = color;
-      el.title = (SB_CAT_LABELS[s.category] || s.category) + ' (' + fmtDuration(start) + ' â†’ ' + fmtDuration(end) + ')';
+      el.title = (SB_CAT_LABELS[s.category] || s.category) + ' (' + fmtDuration(start) + ' \u2192 ' + fmtDuration(end) + ')';
       sbTimeline.appendChild(el);
     });
   }
@@ -1016,7 +1169,7 @@ var LV = (function() {
       t.style.cssText = 'position:fixed;top:72px;right:14px;z-index:10010;background:rgba(0,180,0,0.92);color:#fff;font-size:13px;font-weight:700;padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;';
       document.body.appendChild(t);
     }
-    t.textContent = 'â­ Skipped: ' + label;
+    t.textContent = '\u23ED Skipped: ' + label;
     t.style.opacity = '1';
     if (_sbToastTimer) clearTimeout(_sbToastTimer);
     _sbToastTimer = setTimeout(function() { t.style.opacity = '0'; }, 2000);
@@ -1038,12 +1191,12 @@ var LV = (function() {
       var color = SB_CAT_COLORS[c] || '#e8a020';
       return '<span style="color:' + color + '">' + (SB_CAT_LABELS[c] || c) + '</span>';
     });
-    var skipInfo = _sbSkipped ? ' â€” <strong>' + _sbSkipped + ' skipped</strong>' : '';
+    var skipInfo = _sbSkipped ? ' \u2014 <strong>' + _sbSkipped + ' skipped</strong>' : '';
     var toggle = '<button id="sb-toggle-btn" onclick="LV.toggleSBSkip()" style="background:' +
       (_sbAutoSkip ? '#00aa44' : '#666') +
       ';color:#fff;border:none;border-radius:10px;padding:2px 10px;font-size:10px;cursor:pointer;font-weight:700;">' +
       (_sbAutoSkip ? 'AUTO-SKIP ON' : 'AUTO-SKIP OFF') + '</button>';
-    sbBar.innerHTML = 'âš¡ SponsorBlock: ' + parts.join(', ') + skipInfo + '&nbsp;&nbsp;' + toggle;
+    sbBar.innerHTML = '\u26A1 SponsorBlock: ' + parts.join(', ') + skipInfo + '&nbsp;&nbsp;' + toggle;
   }
 
   function toggleSBSkip() {
@@ -1060,17 +1213,17 @@ var LV = (function() {
 
     var vid = extractVideoId(f.name);
     if (!vid) {
-      // No YouTube ID in filename â€” silently skip SponsorBlock, no cluttered message
+      // No YouTube ID in filename \u2014 silently skip SponsorBlock, no cluttered message
       if (onReady) onReady();
       return;
     }
 
-    sbBar.innerHTML = 'âš¡ Checking SponsorBlockâ€¦';
+    sbBar.innerHTML = '\u26A1 Checking SponsorBlock\u2026';
     sbBar.classList.add('visible');
 
     fetchSBSegments(vid).then(function(result) {
       if (result && result.error) {
-        sbBar.innerHTML = 'âš¡ SponsorBlock unavailable';
+        sbBar.innerHTML = '\u26A1 SponsorBlock unavailable';
         if (onReady) onReady();
         return;
       }
@@ -1099,21 +1252,21 @@ var LV = (function() {
     if (t) t.style.opacity = '0';
   }
 
-  /* â”€â”€ Timeline seek events â”€â”€ */
+  /* \u2500\u2500 Timeline seek events \u2500\u2500 */
   sbTimeline.addEventListener('click', seekTimeline);
   sbTimeline.addEventListener('touchstart', function(e) { e.preventDefault(); seekTimeline(e); }, { passive: false });
 
-  /* â”€â”€ Utils â”€â”€ */
+  /* \u2500\u2500 Utils \u2500\u2500 */
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  /* â”€â”€ Keyboard â”€â”€ */
+  /* \u2500\u2500 Keyboard \u2500\u2500 */
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && overlay.classList.contains('active')) close();
   });
 
-  /* â”€â”€ Pull to refresh â”€â”€ */
+  /* \u2500\u2500 Pull to refresh \u2500\u2500 */
   function ensurePullIndicator() {
     if (_pullIndicator) return _pullIndicator;
     _pullIndicator = document.createElement('div');
@@ -1139,7 +1292,7 @@ var LV = (function() {
       _pullActive = true;
       _pullDelta  = 0;
     }
-  }, { passive: true }); // passive OK here â€” we only preventDefault in touchmove
+  }, { passive: true }); // passive OK here \u2014 we only preventDefault in touchmove
 
   grid.addEventListener('touchmove', function(e) {
     if (!_pullActive) return;
@@ -1173,7 +1326,7 @@ var LV = (function() {
     setTimeout(function() { grid.style.transition = ''; }, 220);
     var ind = ensurePullIndicator();
     if (triggered) {
-      ind.textContent = '\u27f3 Refreshingâ€¦';
+      ind.textContent = '\u27f3 Refreshing\u2026';
       ind.style.color = '#fff';
       ind.style.background = 'var(--lv-hl)';
       setTimeout(function() { ind.style.display = 'none'; }, 1200);
@@ -1192,7 +1345,7 @@ var LV = (function() {
     if (_pullIndicator) _pullIndicator.style.display = 'none';
   });
 
-  /* â”€â”€ Restore previous session â”€â”€ */
+  /* \u2500\u2500 Restore previous session \u2500\u2500 */
   (function initRestore() {
     _rootName = loadRootName();
     updateHeader();
@@ -1200,12 +1353,12 @@ var LV = (function() {
       if (!handle) return;
       handle.queryPermission({ mode: 'read' }).then(function(status) {
         if (status === 'granted') {
-          // Already have permission â€” restore immediately, no tap needed
+          // Already have permission \u2014 restore immediately, no tap needed
           restoreHandle(handle);
         } else if (status === 'prompt') {
           // Browser REQUIRES a real user gesture to call requestPermission.
           // Show a one-tap banner so the user provides that gesture,
-          // then silently re-grant and load â€” no folder picker, no re-scan.
+          // then silently re-grant and load \u2014 no folder picker, no re-scan.
           showRestoreBanner(handle);
         }
         // status === 'denied': user must open folder again manually
@@ -1230,13 +1383,13 @@ var LV = (function() {
     banner.innerHTML = '\ud83d\udcc2 Tap to reload &nbsp;<strong>' + esc(name) + '</strong>';
 
     banner.addEventListener('click', function() {
-      banner.innerHTML = '\u23f3 Loadingâ€¦';
+      banner.innerHTML = '\u23f3 Loading\u2026';
       handle.requestPermission({ mode: 'read' }).then(function(newStatus) {
         if (newStatus === 'granted') {
           banner.remove();
           restoreHandle(handle);
         } else {
-          banner.innerHTML = '\u26a0\ufe0f Permission denied â€” tap Open Folder';
+          banner.innerHTML = '\u26a0\ufe0f Permission denied \u2014 tap Open Folder';
           setTimeout(function() { banner.remove(); }, 3000);
         }
       }).catch(function() { banner.remove(); });
@@ -1251,13 +1404,13 @@ var LV = (function() {
     updateHeader();
     scanDir(handle).then(function(files) {
       loadFiles(files);
-      // Do NOT auto-open the player on restore â€” that requires a user gesture
+      // Do NOT auto-open the player on restore \u2014 that requires a user gesture
       // and would be jarring. The last-played file is remembered in state for
       // the user to tap manually if they want to resume.
     });
   }
 
-  /* â”€â”€ PWA: Manifest + Install + Service Worker â”€â”€ */
+  /* \u2500\u2500 PWA: Manifest + Install + Service Worker \u2500\u2500 */
   var _pwaDeferredPrompt = null;
 
   // Generate manifest as Blob URL (reliable for install prompts)
@@ -1311,7 +1464,7 @@ var LV = (function() {
     }).catch(function(){});
   }
 
-  /* â”€â”€ Video events â”€â”€ */
+  /* \u2500\u2500 Video events \u2500\u2500 */
   videoEl.addEventListener('timeupdate', function() {
     updateSBProgress(); // also handles auto-skip check
     if (_currentIdx !== null) {
@@ -1332,7 +1485,7 @@ var LV = (function() {
     renderSBSegments(videoEl.duration);
   });
 
-  /* â”€â”€ Public API â”€â”€ */
+  /* \u2500\u2500 Public API \u2500\u2500 */
   return { pickFolder: pickFolder, search: search, toggleSort: toggleSort, close: close,
            toggleShuffle: toggleShuffle, toggleSBSkip: toggleSBSkip,
            playNext: playNext, prevTrack: prevTrack, playAll: playAll, installPWA: installPWA };
