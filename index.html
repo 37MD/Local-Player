@@ -665,8 +665,18 @@ var LV = (function() {
   var SB_API = 'https://sponsor.ajay.app/api/skipSegments?videoID=';
 
   function extractVideoId(name) {
+    // Strip extension for cleaner matching
+    var base = name.replace(/\.[^.]+$/, '');
+    // Pattern 1: ID inside brackets, parens, or braces
     var m = name.match(/[\[\(\{]([a-zA-Z0-9_-]{11})[\]\)\}]/);
     if (m) return m[1];
+    // Pattern 2: ID separated by dash, underscore, space, or at boundaries
+    m = name.match(/(?:^|[\s\-_\.])([a-zA-Z0-9_-]{11})(?:[\s\-_\.]|$)/);
+    if (m) return m[1];
+    // Pattern 3: bare ID as whole filename (before extension)
+    m = base.match(/^([a-zA-Z0-9_-]{11})$/);
+    if (m) return m[1];
+    // Pattern 4: word-boundary fallback for embedded IDs
     m = name.match(/\b([a-zA-Z0-9_-]{11})\b/);
     return m ? m[1] : null;
   }
