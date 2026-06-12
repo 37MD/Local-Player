@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f0f0f">
-<link rel="manifest" href='data:application/json,{"name":"Local Player by 37md","short_name":"LocalPlayer","description":"Offline local media player with SponsorBlock","start_url":".","display":"standalone","orientation":"landscape","background_color":"#0f0f0f","theme_color":"#0f0f0f","categories":["entertainment","video","music"],"icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E","sizes":"512x512","type":"image/svg+xml","purpose":"any"},{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml","purpose":"any"}]}'>
+<link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <title>Local Player</title>
@@ -187,6 +187,17 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── PWA Install badge ── */
+#pwa-badge {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 99999; background: var(--lv-hl); color: #fff; font-weight: 700;
+  font-size: 14px; padding: 12px 24px; border-radius: 24px; cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4); display: none;
+  text-transform: uppercase; letter-spacing: .06em;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
 </style>
 </head>
 <body>
@@ -226,6 +237,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   <div id="sb-timeline-wrap"><div class="sb-progress" id="sb-progress"></div></div>
   <div id="sb-bar"></div>
 </div>
+
+<div id="pwa-badge" onclick="LV.installPWA()">⬇ Install App</div>
 
 <script>
 /* =====================================================================
@@ -849,7 +862,54 @@ var LV = (function() {
     });
   })();
 
-  /* ── Service Worker registration ── */
+  /* ── PWA: Manifest + Install + Service Worker ── */
+  var _pwaDeferredPrompt = null;
+
+  // Generate manifest as Blob URL (reliable for install prompts)
+  (function initManifest() {
+    var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
+    var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
+    var manifest = {
+      name: 'Local Player by 37md',
+      short_name: 'LocalPlayer',
+      description: 'Offline local media player with SponsorBlock',
+      start_url: '.',
+      display: 'standalone',
+      orientation: 'natural',
+      background_color: '#0f0f0f',
+      theme_color: '#0f0f0f',
+      categories: ['entertainment','video','music'],
+      icons: [
+        { src: 'data:image/svg+xml,' + icon512, sizes: '512x512', type: 'image/svg+xml', purpose: 'any' },
+        { src: 'data:image/svg+xml,' + icon192, sizes: '192x192', type: 'image/svg+xml', purpose: 'any' }
+      ]
+    };
+    var link = document.getElementById('manifest-link');
+    if (link) link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
+  })();
+
+  var badgeEl = document.getElementById('pwa-badge');
+
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    _pwaDeferredPrompt = e;
+    if (badgeEl) badgeEl.style.display = 'block';
+  });
+
+  function installPWA() {
+    if (!_pwaDeferredPrompt) return;
+    _pwaDeferredPrompt.prompt();
+    _pwaDeferredPrompt.userChoice.then(function() {
+      _pwaDeferredPrompt = null;
+      if (badgeEl) badgeEl.style.display = 'none';
+    });
+  }
+
+  window.addEventListener('appinstalled', function() {
+    _pwaDeferredPrompt = null;
+    if (badgeEl) badgeEl.style.display = 'none';
+  });
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function(){});
   }
@@ -878,7 +938,7 @@ var LV = (function() {
   /* ── Public API ── */
   return { pickFolder: pickFolder, search: search, toggleSort: toggleSort, close: close,
            toggleOrientation: toggleOrientation, toggleShuffle: toggleShuffle,
-           playNext: playNext, prevTrack: prevTrack, playAll: playAll };
+           playNext: playNext, prevTrack: prevTrack, playAll: playAll, installPWA: installPWA };
 
 })();
 </script>
