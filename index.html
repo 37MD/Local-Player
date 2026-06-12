@@ -666,7 +666,7 @@ var LV = (function() {
     var allAudio = files.length && files.every(function(f) { return isAudio(f.name); });
     var label = allAudio ? 'song' : 'media';
     var cached = files.length && files[0] && files[0].cached;
-    countEl.textContent = files.length + ' ' + label + (files.length !== 1 ? 's' : '') + (cached ? ' (cached)' : '');
+    countEl.textContent = files.length + ' ' + label + (files.length !== 1 ? 's' : '') + (cached ? ' \u2014 tap to play' : '');
     if (files.length === 0) {
       grid.innerHTML = _files.length === 0
         ? '<div class="state-msg"><div class="icon">\uD83D\uDCC2</div><h2>No folder open</h2><p>Tap <strong>Open Folder</strong> to load your media.</p></div>'
@@ -802,7 +802,12 @@ var LV = (function() {
           loadFiles(files);
           _files.forEach(function(x) { x.cached = false; });
           var refreshed = _files.find(function(x) { return x.name === f.name; });
-          if (refreshed) play(refreshed.idx);
+          if (refreshed) {
+            play(refreshed.idx);
+            // Ensure unmuted — user tapped, so gesture chain is intact
+            videoEl.muted = false;
+            hideUnmuteBanner();
+          }
         });
       }).catch(function() {
         showRefreshToast('\u26A0\uFE0F Permission error \u2014 tap Open Folder');
@@ -1445,7 +1450,7 @@ var LV = (function() {
         });
         _filtered = _files.slice();
         renderGrid(_filtered);
-        countEl.textContent = cached.length + ' file' + (cached.length !== 1 ? 's' : '') + ' (cached)';
+        countEl.textContent = cached.length + ' file' + (cached.length !== 1 ? 's' : '') + ' \u2014 tap to play';
       }
     });
 
