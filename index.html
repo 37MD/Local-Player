@@ -907,20 +907,32 @@ var LV = (function() {
     loadHandle().then(function(handle) {
       if (!handle) return;
       handle.queryPermission({ mode: 'read' }).then(function(status) {
-        if (status !== 'granted') return;
-        _rootName = handle.name;
-        storeRootName(_rootName);
-        updateHeader();
-        scanDir(handle).then(function(files) {
-          loadFiles(files);
-          var state = loadState();
-          if (state.idx !== null && state.idx < _files.length) {
-            setTimeout(function() { playAt(state.idx, state.time); }, 300);
-          }
-        });
+        if (status === 'granted') {
+          restoreHandle(handle);
+        } else if (status === 'prompt') {
+          // Request permission automatically (no user gesture needed for previously granted origins)
+          handle.requestPermission({ mode: 'read' }).then(function(newStatus) {
+            if (newStatus === 'granted') {
+              restoreHandle(handle);
+            }
+          });
+        }
       });
     });
   })();
+
+  function restoreHandle(handle) {
+    _rootName = handle.name;
+    storeRootName(_rootName);
+    updateHeader();
+    scanDir(handle).then(function(files) {
+      loadFiles(files);
+      var state = loadState();
+      if (state.idx !== null && state.idx < _files.length) {
+        setTimeout(function() { playAt(state.idx, state.time); }, 300);
+      }
+    });
+  }
 
   /* ── PWA: Manifest + Install + Service Worker ── */
   var _pwaDeferredPrompt = null;
