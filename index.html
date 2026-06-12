@@ -62,14 +62,22 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 /* ── Scan spinner ── */
 #scan-spinner {
-  display: none; width: 22px; height: 22px;
-  border: 3px solid rgba(255,255,255,.15); border-top-color: var(--lv-hl);
-  border-radius: 50%; animation: spin .7s linear infinite;
-  flex-shrink: 0; transition: border-color .3s, border-top-color .3s;
-  margin-left: auto;
+  display: none;
+  width: 26px; height: 26px;
+  border: 3px solid rgba(255,255,255,.18);
+  border-top-color: var(--lv-hl);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+  transition: border-color .4s, border-top-color .4s;
+  margin-right: 4px;
 }
-#scan-spinner.active { display: inline-block; }
-#scan-spinner.done { border-color: #4caf50; border-top-color: #4caf50; animation: none; }
+#scan-spinner.active { display: block; }
+#scan-spinner.done {
+  border-color: #4caf50;
+  border-top-color: #4caf50;
+  animation: none;
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* &#9472;&#9472; File Grid &#9472;&#9472; */
@@ -208,8 +216,13 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <body>
 
 <div class="app-header">
-  <h1>&#128241; Local Player</h1>
-  <p>Videos & Songs &#183; Phone Storage &#183; No Network</p>
+  <div style="display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <h1 id="lv-header-title">&#128241; Local Player</h1>
+      <p>Videos &amp; Songs &#183; Phone Storage &#183; No Network</p>
+    </div>
+    <span id="scan-spinner"></span>
+  </div>
 </div>
 
 <div class="controls">
@@ -217,7 +230,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   <button class="btn btn-sort" onclick="LV.playAll()" id="lv-playall-btn">&#9654; Play All</button>
   <button class="btn btn-sort" onclick="LV.toggleShuffle()" id="lv-shuffle-btn">&#128256; Off</button>
   <span class="count-badge" id="lv-count"></span>
-  <span id="scan-spinner"></span>
 </div>
 
 <div id="lv-grid" class="file-list">
@@ -285,12 +297,12 @@ var LV = (function() {
 
   /* ── Scan spinner ── */
   function showSpinner() {
-    scanSpinner.style.display = 'inline-block';
+    scanSpinner.style.display = 'block';
     scanSpinner.className = 'active';
   }
   function hideSpinner() {
     scanSpinner.className = 'done';
-    setTimeout(function() { scanSpinner.style.display = 'none'; scanSpinner.className = ''; }, 2000);
+    setTimeout(function() { scanSpinner.style.display = 'none'; scanSpinner.className = ''; }, 2500);
   }
 
   /* \u2500\u2500 Pull to refresh \u2500\u2500 */
