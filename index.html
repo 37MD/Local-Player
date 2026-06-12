@@ -246,6 +246,7 @@ var LV = (function() {
   var _shuffleMode = false;
   var _playedIndices = [];
   var _saveTimer  = null;
+  var _autoPlayMode = false; // true when Play All / shuffle auto-advance
 
   /* ── DOM refs ── */
   var grid      = document.getElementById('lv-grid');
@@ -369,12 +370,12 @@ var LV = (function() {
 
   function prevTrack() {
     if (!_filtered.length) return;
-    if (_currentIdx === null) return play(_filtered[_filtered.length - 1].idx);
+    if (_currentIdx === null) return play(_filtered[_filtered.length - 1].idx, _autoPlayMode);
     var curPos = -1;
     _filtered.forEach(function(f, i) { if (f.idx === _currentIdx) curPos = i; });
-    if (curPos === -1) return play(_filtered[_filtered.length - 1].idx);
+    if (curPos === -1) return play(_filtered[_filtered.length - 1].idx, _autoPlayMode);
     var prev = (curPos - 1 + _filtered.length) % _filtered.length;
-    play(_filtered[prev].idx);
+    play(_filtered[prev].idx, _autoPlayMode);
   }
 
   function playAll() {
@@ -382,6 +383,7 @@ var LV = (function() {
     var idx = _filtered[0].idx;
     _shuffleMode = false;
     _playedIndices = [];
+    _autoPlayMode = true;
     shuffleBtn.textContent = '🔀 Off';
     shuffleBtn.className = 'btn btn-sort';
     play(idx);
@@ -413,7 +415,7 @@ var LV = (function() {
   function playNext() {
     var idx = _shuffleMode ? nextShuffleIdx() : nextSequentialIdx();
     if (idx === null || idx === _currentIdx) return;
-    play(idx);
+    play(idx, _autoPlayMode);
   }
 
   /* ── Pick folder ── */
@@ -582,11 +584,14 @@ var LV = (function() {
   }
 
   /* ── Play ── */
-  function play(idx) {
+  function play(idx, autoPlay) {
     var f = _files[idx];
     if (!f) return;
     _currentIdx = idx;
     saveState();
+
+    // If user manually clicks a video (not auto-advance), disable auto-play mode
+    if (autoPlay !== true) _autoPlayMode = false;
 
     titleEl.textContent = f.name.replace(/\.[^.]+$/, '');
     videoEl.src = f.url;
@@ -718,6 +723,8 @@ var LV = (function() {
     } else if (screen.unlockOrientation) {
       screen.unlockOrientation();
     }
+
+    _autoPlayMode = false;
 
     onVideoClose();
   }
