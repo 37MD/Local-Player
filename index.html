@@ -816,23 +816,28 @@ var LV = (function() {
   (function initRestore() {
     _rootName = loadRootName();
     updateHeader();
-    if (location.protocol === 'file:' || location.protocol === 'content:') return;
     loadHandle().then(function(handle) {
       if (!handle) return;
-      handle.requestPermission({ mode: 'read' }).then(function(status) {
-        if (status === 'granted') {
-          _rootName = handle.name;
-          storeRootName(_rootName);
-          updateHeader();
-          scanDir(handle).then(function(files) {
-            loadFiles(files);
-            var state = loadState();
-            if (state.idx !== null && state.idx < _files.length) {
-              setTimeout(function() { playAt(state.idx, state.time); }, 300);
-            }
-          });
-        }
-      });
+      var permTries = 0;
+      (function tryPermission() {
+        if (permTries++ > 3) return;
+        handle.requestPermission({ mode: 'read' }).then(function(status) {
+          if (status === 'granted') {
+            _rootName = handle.name;
+            storeRootName(_rootName);
+            updateHeader();
+            scanDir(handle).then(function(files) {
+              loadFiles(files);
+              var state = loadState();
+              if (state.idx !== null && state.idx < _files.length) {
+                setTimeout(function() { playAt(state.idx, state.time); }, 300);
+              }
+            });
+          } else if (status === 'prompt') {
+            setTimeout(tryPermission, 500);
+          }
+        });
+      })();
     });
   })();
 
