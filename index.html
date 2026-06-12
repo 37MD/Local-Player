@@ -65,6 +65,17 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   padding: 0 4px;
 }
 
+/* ── Scan spinner ── */
+#scan-spinner {
+  display: none; width: 14px; height: 14px;
+  border: 2px solid var(--muted); border-top-color: var(--lv-hl);
+  border-radius: 50%; animation: spin .7s linear infinite;
+  flex-shrink: 0; transition: border-color .3s;
+}
+#scan-spinner.active { display: inline-block; }
+#scan-spinner.done { border-color: #4caf50; animation: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* &#9472;&#9472; File Grid &#9472;&#9472; */
 .file-list {
   overflow-y: auto; max-height: calc(100vh - 180px);
@@ -212,6 +223,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   <button class="btn btn-sort" onclick="LV.toggleSort()" id="lv-sort-btn">&#8645; Name</button>
   <button class="btn btn-sort" onclick="LV.toggleShuffle()" id="lv-shuffle-btn">&#128256; Off</button>
   <span class="count-badge" id="lv-count"></span>
+  <span id="scan-spinner"></span>
 </div>
 
 <div id="lv-grid" class="file-list">
@@ -264,7 +276,6 @@ var LV = (function() {
   var _playedIndices = [];
   var _saveTimer  = null;
   var _autoPlayMode = false; // true when Play All / shuffle auto-advance
-  var _userMuted    = false; // true when user explicitly muted via unmute banner
 
   /* \u2500\u2500 DOM refs \u2500\u2500 */
   var grid      = document.getElementById('lv-grid');
@@ -277,6 +288,16 @@ var LV = (function() {
   var sbBar     = document.getElementById('sb-bar');
   var sbTimeline = document.getElementById('sb-timeline-wrap');
   var sbProgress = document.getElementById('sb-progress');
+  var scanSpinner = document.getElementById('scan-spinner');
+
+  /* ── Scan spinner ── */
+  function showSpinner() {
+    scanSpinner.className = 'active';
+  }
+  function hideSpinner() {
+    scanSpinner.className = 'done';
+    setTimeout(function() { scanSpinner.className = ''; }, 1500);
+  }
 
   /* \u2500\u2500 Pull to refresh \u2500\u2500 */
   var _pullStartY    = 0;
@@ -479,9 +500,10 @@ var LV = (function() {
           _rootName = dirHandle.name;
           storeRootName(_rootName);
           updateHeader();
+          showSpinner();
           return scanDir(dirHandle);
         })
-        .then(function(files) { loadFiles(files); })
+        .then(function(files) { loadFiles(files); hideSpinner(); })
         .catch(function(e) {
           if (e.name !== 'AbortError') webkitFallback();
         });
@@ -560,8 +582,10 @@ var LV = (function() {
   }
 
   function doRefresh(handle) {
+    showSpinner();
     scanDir(handle).then(function(files) {
       loadFiles(files);
+      hideSpinner();
       showRefreshToast('\u2713 Refreshed \u2014 ' + files.length + ' file' + (files.length !== 1 ? 's' : ''));
     });
   }
@@ -710,8 +734,6 @@ var LV = (function() {
     // If user manually clicks a video (not auto-advance), disable auto-play mode
     if (autoPlay !== true) {
       _autoPlayMode = false;
-      hideUnmuteBanner(); // user has a gesture \u2014 no need for muted banner
-      _userMuted = false;
     }
 
     titleEl.textContent = f.name.replace(/\.[^.]+$/, '');
@@ -731,14 +753,11 @@ var LV = (function() {
     //   so unmuted autoplay is blocked on Android Chrome/MIUI. Show an unmute
     //   banner instead so the user taps once to restore sound for the session.
     if (autoPlay === true && _autoPlayMode) {
-      // Auto-advance: play muted to guarantee playback, show unmute banner
+      // Auto-advance: play muted to guarantee playback on mobile
       videoEl.muted = true;
       var playPromise = videoEl.play();
       if (playPromise) {
-        playPromise.then(function() {
-          if (!_userMuted) showUnmuteBanner();
-        }).catch(function(err) {
-          // Even muted play blocked \u2014 extremely rare, show tap-to-play hint
+        playPromise.catch(function(err) {
           showTapToPlayHint();
         });
       }
@@ -778,10 +797,6 @@ var LV = (function() {
     var f = _files[idx];
     if (!f || !f.cached) return;
 
-    // Kill any stale unmute banner from previous session
-    hideUnmuteBanner();
-    _userMuted = false;
-
     // Show loading state on the item
     var item = grid.querySelector('[data-idx="' + idx + '"]');
     var playIcon = item ? item.querySelector('.play-icon') : null;
@@ -800,20 +815,17 @@ var LV = (function() {
           if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
           return;
         }
+        showSpinner();
         scanDir(handle).then(function(files) {
           loadFiles(files);
+          hideSpinner();
           _files.forEach(function(x) { x.cached = false; });
           var refreshed = _files.find(function(x) { return x.name === f.name; });
           if (refreshed) {
-            // Force unmuted — user gesture is active
             videoEl.muted = false;
             _autoPlayMode = false;
-            _userMuted = false;
-            hideUnmuteBanner();
             play(refreshed.idx);
-            // Double-check after play() — some browsers re-mute on src change
             videoEl.muted = false;
-            hideUnmuteBanner();
           }
         });
       }).catch(function() {
@@ -842,32 +854,6 @@ var LV = (function() {
       hint.style.transition = 'opacity 0.5s';
       setTimeout(function() { hint.remove(); }, 500);
     }, 3000);
-  }
-
-  /* \u2500\u2500 Unmute banner (shown on auto-advance when gesture chain is broken) \u2500\u2500 */
-  var _unmuteBanner = null;
-  function showUnmuteBanner() {
-    if (_unmuteBanner) return; // already showing
-    _unmuteBanner = document.createElement('div');
-    _unmuteBanner.style.cssText = [
-      'position:fixed;bottom:80px;left:50%;transform:translateX(-50%)',
-      'z-index:10020;background:rgba(0,0,0,0.88);color:#fff',
-      'font-size:15px;font-weight:700;padding:12px 24px',
-      'border-radius:24px;cursor:pointer;border:2px solid var(--lv-hl)',
-      'touch-action:manipulation;-webkit-tap-highlight-color:transparent',
-      'white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5)'
-    ].join(';');
-    _unmuteBanner.textContent = '\uD83D\uDD07 Tap to unmute';
-    _unmuteBanner.addEventListener('click', function() {
-      videoEl.muted = false;
-      _userMuted = false;
-      if (_unmuteBanner) { _unmuteBanner.remove(); _unmuteBanner = null; }
-    });
-    document.body.appendChild(_unmuteBanner);
-  }
-
-  function hideUnmuteBanner() {
-    if (_unmuteBanner) { _unmuteBanner.remove(); _unmuteBanner = null; }
   }
 
   function showTapToPlayHint() {
@@ -1143,10 +1129,6 @@ var LV = (function() {
 
     // Teardown gesture controls
     teardownGestureControls();
-
-    // Hide unmute banner if showing
-    hideUnmuteBanner();
-    _userMuted = false;
 
     // Exit fullscreen and unlock orientation (handles both native and CSS fallback)
     exitFullscreenAndUnlock();
@@ -1446,7 +1428,6 @@ var LV = (function() {
 
   (function initRestore() {
     // Kill any stale unmute banner from a previous session
-    hideUnmuteBanner();
     var oldBanner = document.getElementById('restore-banner');
     if (oldBanner) oldBanner.remove();
 
@@ -1519,9 +1500,10 @@ var LV = (function() {
     _rootName = handle.name;
     storeRootName(_rootName);
     updateHeader();
+    showSpinner();
     scanDir(handle).then(function(files) {
       loadFiles(files);
-      // Files now have live blob URLs — remove cached flag
+      hideSpinner();
       _files.forEach(function(f) { f.cached = false; });
       sortFiles();
       renderGrid(_filtered);
