@@ -250,7 +250,8 @@ var LV = (function() {
   var CONFIG = {
     dbName: 'LocalVideosDB',
     storeName: 'session',
-    version: 1
+    cacheStore: 'fileCache',
+    version: 2
   };
 
   /* \u2500\u2500 State \u2500\u2500 */
@@ -324,6 +325,8 @@ var LV = (function() {
         var db = req.result;
         if (!db.objectStoreNames.contains(CONFIG.storeName))
           db.createObjectStore(CONFIG.storeName);
+        if (!db.objectStoreNames.contains(CONFIG.cacheStore))
+          db.createObjectStore(CONFIG.cacheStore);
       };
       req.onsuccess = function() { resolve(req.result); };
       req.onerror = function() { reject(req.error); };
@@ -355,6 +358,29 @@ var LV = (function() {
 
   function loadRootName() {
     try { return localStorage.getItem('lv_rootName') || ''; } catch(e) { return ''; }
+  }
+
+  /* \u2500\u2500 File cache (IndexedDB) \u2500\u2500 */
+  function saveFileCache(files) {
+    // Store file metadata (no blob URLs — they don't persist)
+    var cache = files.map(function(f) {
+      return { name: f.name, ext: f.ext, size: f.size };
+    });
+    openDB().then(function(db) {
+      var tx = db.transaction(CONFIG.cacheStore, 'readwrite');
+      tx.objectStore(CONFIG.cacheStore).put(cache, 'files');
+    }).catch(function(){});
+  }
+
+  function loadFileCache() {
+    return openDB().then(function(db) {
+      return new Promise(function(resolve) {
+        var tx = db.transaction(CONFIG.cacheStore, 'readonly');
+        var req = tx.objectStore(CONFIG.cacheStore).get('files');
+        req.onsuccess = function() { resolve(req.result || []); };
+        req.onerror = function() { resolve([]); };
+      });
+    }).catch(function() { return []; });
   }
 
   function updateHeader() {
@@ -448,6 +474,7 @@ var LV = (function() {
     if (window.showDirectoryPicker && location.protocol !== 'file:' && location.protocol !== 'content:') {
       window.showDirectoryPicker({ mode: 'read' })
         .then(function(dirHandle) {
+          _cachedDirHandle = dirHandle;
           storeHandle(dirHandle);
           _rootName = dirHandle.name;
           storeRootName(_rootName);
@@ -507,7 +534,8 @@ var LV = (function() {
   }
 
   function refreshFolder() {
-    loadHandle().then(function(handle) {
+    var handlePromise = _cachedDirHandle ? Promise.resolve(_cachedDirHandle) : loadHandle();
+    handlePromise.then(function(handle) {
       if (!handle) return;
       handle.queryPermission({ mode: 'read' }).then(function(status) {
         if (status === 'granted') {
@@ -597,6 +625,8 @@ var LV = (function() {
     _files.forEach(function(f, i) { f.idx = i; });
     sortFiles();
     renderGrid(_filtered);
+    // Cache metadata for instant load on next restart
+    if (files.length > 0) saveFileCache(files);
   }
 
   /* \u2500\u2500 Sort \u2500\u2500 */
@@ -635,7 +665,8 @@ var LV = (function() {
   function renderGrid(files) {
     var allAudio = files.length && files.every(function(f) { return isAudio(f.name); });
     var label = allAudio ? 'song' : 'media';
-    countEl.textContent = files.length + ' ' + label + (files.length !== 1 ? 's' : '');
+    var cached = files.length && files[0] && files[0].cached;
+    countEl.textContent = files.length + ' ' + label + (files.length !== 1 ? 's' : '') + (cached ? ' (cached)' : '');
     if (files.length === 0) {
       grid.innerHTML = _files.length === 0
         ? '<div class="state-msg"><div class="icon">\uD83D\uDCC2</div><h2>No folder open</h2><p>Tap <strong>Open Folder</strong> to load your media.</p></div>'
@@ -659,7 +690,12 @@ var LV = (function() {
           '<div class="file-item-meta">' + esc(meta) + '</div>' +
         '</div>';
 
-      item.addEventListener('click', function() { play(f.idx); });
+      if (f.cached) {
+        // Cached file — need permission to play
+        item.addEventListener('click', function() { playCached(f.idx); });
+      } else {
+        item.addEventListener('click', function() { play(f.idx); });
+      }
       grid.appendChild(item);
     });
   }
@@ -737,6 +773,42 @@ var LV = (function() {
 
     // SponsorBlock fetch in background (non-blocking)
     onVideoOpen(f, null);
+  }
+
+  /* \u2500\u2500 Play a cached file (needs permission first) \u2500\u2500 */
+  function playCached(idx) {
+    var f = _files[idx];
+    if (!f || !f.cached) return;
+
+    if (!_cachedDirHandle) {
+      showRefreshToast('\u26A0\uFE0F No folder access \u2014 tap Open Folder');
+      return;
+    }
+
+    // Show loading state on the item
+    var item = grid.querySelector('[data-idx="' + idx + '"]');
+    if (item) {
+      var playIcon = item.querySelector('.play-icon');
+      if (playIcon) playIcon.textContent = '\u23F3';
+    }
+
+    _cachedDirHandle.requestPermission({ mode: 'read' }).then(function(status) {
+      if (status !== 'granted') {
+        showRefreshToast('\u26A0\uFE0F Permission denied');
+        if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
+        return;
+      }
+      // Permission granted \u2014 re-scan to get blob URLs
+      scanDir(_cachedDirHandle).then(function(files) {
+        loadFiles(files);
+        // Now play the file (it has a blob URL now)
+        var refreshed = _files.find(function(x) { return x.name === f.name; });
+        if (refreshed) play(refreshed.idx);
+      });
+    }).catch(function() {
+      showRefreshToast('\u26A0\uFE0F Permission error');
+      if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
+    });
   }
 
   function showOrientationHint() {
@@ -1346,22 +1418,37 @@ var LV = (function() {
   });
 
   /* \u2500\u2500 Restore previous session \u2500\u2500 */
+  var _cachedDirHandle = null;  // live handle when permission granted
+
   (function initRestore() {
     _rootName = loadRootName();
     updateHeader();
+
+    // STEP 1: Load cached file list instantly — user sees playlist immediately
+    loadFileCache().then(function(cached) {
+      if (cached && cached.length > 0) {
+        // Show cached files (no blob URLs yet — they can't play, but list shows)
+        _files = cached.map(function(c, i) {
+          return { idx: i, name: c.name, ext: c.ext, size: c.size, url: null, cached: true };
+        });
+        _filtered = _files.slice();
+        renderGrid(_filtered);
+        countEl.textContent = cached.length + ' file' + (cached.length !== 1 ? 's' : '') + ' (cached)';
+      }
+    });
+
+    // STEP 2: Try to get live handle for actual playback
     loadHandle().then(function(handle) {
       if (!handle) return;
+      _cachedDirHandle = handle;
       handle.queryPermission({ mode: 'read' }).then(function(status) {
         if (status === 'granted') {
-          // Already have permission \u2014 restore immediately, no tap needed
+          // Live handle ready — re-scan for fresh blob URLs
           restoreHandle(handle);
         } else if (status === 'prompt') {
-          // Browser REQUIRES a real user gesture to call requestPermission.
-          // Show a one-tap banner so the user provides that gesture,
-          // then silently re-grant and load \u2014 no folder picker, no re-scan.
+          // Need user gesture — show restore banner (still have cached list visible)
           showRestoreBanner(handle);
         }
-        // status === 'denied': user must open folder again manually
       });
     });
   })();
@@ -1399,14 +1486,16 @@ var LV = (function() {
   }
 
   function restoreHandle(handle) {
+    _cachedDirHandle = handle;
     _rootName = handle.name;
     storeRootName(_rootName);
     updateHeader();
     scanDir(handle).then(function(files) {
       loadFiles(files);
-      // Do NOT auto-open the player on restore \u2014 that requires a user gesture
-      // and would be jarring. The last-played file is remembered in state for
-      // the user to tap manually if they want to resume.
+      // Files now have live blob URLs — remove cached flag
+      _files.forEach(function(f) { f.cached = false; });
+      sortFiles();
+      renderGrid(_filtered);
     });
   }
 
@@ -1488,7 +1577,8 @@ var LV = (function() {
   /* \u2500\u2500 Public API \u2500\u2500 */
   return { pickFolder: pickFolder, search: search, toggleSort: toggleSort, close: close,
            toggleShuffle: toggleShuffle, toggleSBSkip: toggleSBSkip,
-           playNext: playNext, prevTrack: prevTrack, playAll: playAll, installPWA: installPWA };
+           playNext: playNext, prevTrack: prevTrack, playAll: playAll, installPWA: installPWA,
+           playCached: playCached };
 
 })();
 </script>

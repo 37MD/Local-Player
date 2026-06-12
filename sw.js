@@ -1,4 +1,4 @@
-const CACHE = 'retro-v2';
+const CACHE = 'retro-v3';
 
 self.addEventListener('install', function(e) {
   self.skipWaiting();
