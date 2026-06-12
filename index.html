@@ -166,11 +166,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 }
 #sb-bar.visible { display: flex; }
 #sb-bar .sb-stat { color: var(--muted); font-size: 10px; }
-.sb-skip-btn {
-  padding: 3px 10px; background: var(--accent2); color: #fff;
-  border: none; border-radius: 4px; font-size: 10px; font-weight: 700;
-  cursor: pointer; min-height: 28px; touch-action: manipulation;
-}
 
 /* ── Mobile landscape overrides ── */
 @media (orientation: landscape) and (max-height: 480px) {
@@ -466,7 +461,6 @@ var LV = (function() {
     titleEl.textContent = f.name.replace(/\.[^.]+$/, '');
     videoEl.src = f.url;
     videoEl.load();
-    videoEl.play().catch(function(){});
 
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -474,7 +468,13 @@ var LV = (function() {
     setOrientation(true);
     enterFullscreen();
 
-    onVideoOpen(f);
+    onVideoOpen(f, function() {
+      // Deferred play: seek past any sponsor at 0, then play
+      if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
+        seekPastSponsor();
+      }
+      videoEl.play().catch(function(){});
+    });
   }
 
   /* ── Close player ── */
@@ -529,7 +529,7 @@ var LV = (function() {
 
   /* ── SponsorBlock ── */
   var _sbSegments = [];
-  var _sbAutoSkip = true;
+  var _sbAutoSkip = true;  // always ON, forced
   var _sbSkipped  = 0;
   var _sbCheckInterval = null;
   var SB_API = 'https://sponsor.ajay.app/api/skipSegments?videoID=';
@@ -578,24 +578,31 @@ var LV = (function() {
     sbProgress.style.width = Math.min(pct, 100) + '%';
   }
 
-  function checkSBAutoSkip() {
-    if (!_sbSegments.length) return;
-    // Re-render segments if duration is now available but segments aren't visible
-    if (videoEl.duration && isFinite(videoEl.duration) && videoEl.duration > 0) {
-      var rendered = sbTimeline.querySelectorAll('.sb-seg').length;
-      if (!rendered) renderSBSegments(videoEl.duration);
-    }
-    if (!_sbAutoSkip || !videoEl.duration || !isFinite(videoEl.duration)) return;
+  function seekPastSponsor() {
+    if (!_sbSegments.length || !videoEl.duration || !isFinite(videoEl.duration)) return;
     var ct = videoEl.currentTime;
+    var jumped = false;
     _sbSegments.forEach(function(s) {
       var start = s.segment[0];
       var end   = s.segment[1];
       if (ct >= start && ct < end) {
         videoEl.currentTime = end;
         _sbSkipped++;
-        updateSBBar();
+        jumped = true;
       }
     });
+    if (jumped) updateSBBar();
+    return jumped;
+  }
+
+  function checkSBAutoSkip() {
+    if (!_sbSegments.length) return;
+    if (videoEl.duration && isFinite(videoEl.duration) && videoEl.duration > 0) {
+      var rendered = sbTimeline.querySelectorAll('.sb-seg').length;
+      if (!rendered) renderSBSegments(videoEl.duration);
+    }
+    if (!_sbAutoSkip || !videoEl.duration || !isFinite(videoEl.duration)) return;
+    seekPastSponsor();
   }
 
   function seekTimeline(e) {
@@ -607,18 +614,17 @@ var LV = (function() {
   }
 
   function updateSBBar() {
-    var btn = ' <button class="sb-skip-btn" onclick="LV.toggleAutoSkip()">' + (_sbAutoSkip ? '⏸ Auto' : '▶ Auto') + '</button>';
     if (!_sbSegments.length) {
-      sbBar.innerHTML = '⚡ No sponsor segments' + btn;
+      sbBar.innerHTML = '⚡ No sponsor segments';
       return;
     }
     var stat = _sbSkipped
-      ? '⏭ Skipped ' + _sbSkipped + ' sponsor' + (_sbSkipped > 1 ? 's' : '')
+      ? '⏭ Auto-skipped ' + _sbSkipped + ' sponsor' + (_sbSkipped > 1 ? 's' : '')
       : '⚡ ' + _sbSegments.length + ' sponsor segment' + (_sbSegments.length > 1 ? 's' : '');
-    sbBar.innerHTML = stat + ' <span class="sb-stat">(' + _sbSegments.length + ' segs)</span>' + btn;
+    sbBar.innerHTML = stat + ' <span class="sb-stat">(forced ON)</span>';
   }
 
-  function onVideoOpen(f) {
+  function onVideoOpen(f, onReady) {
     _sbSegments = [];
     _sbSkipped = 0;
     sbProgress.style.width = '0%';
@@ -628,26 +634,27 @@ var LV = (function() {
 
     var vid = extractVideoId(f.name);
     if (!vid) {
-      sbBar.innerHTML = '⚡ No video ID found in filename' +
-        ' <button class="sb-skip-btn" onclick="LV.toggleAutoSkip()">' + (_sbAutoSkip ? '⏸ Auto' : '▶ Auto') + '</button>';
+      sbBar.innerHTML = '⚡ No video ID found in filename';
+      if (onReady) onReady();
       return;
     }
 
     fetchSBSegments(vid).then(function(result) {
       if (result.error) {
-        sbBar.innerHTML = '⚡ SB error: ' + result.error +
-          ' <button class="sb-skip-btn" onclick="LV.toggleAutoSkip()">' + (_sbAutoSkip ? '⏸ Auto' : '▶ Auto') + '</button>';
+        sbBar.innerHTML = '⚡ SB error: ' + result.error;
+        if (onReady) onReady();
         return;
       }
       _sbSegments = result;
       if (!result.length) {
-        sbBar.innerHTML = '⚡ No sponsor segments for this video' +
-          ' <button class="sb-skip-btn" onclick="LV.toggleAutoSkip()">' + (_sbAutoSkip ? '⏸ Auto' : '▶ Auto') + '</button>';
+        sbBar.innerHTML = '⚡ No sponsor segments for this video';
         renderSBSegments(videoEl.duration);
+        if (onReady) onReady();
         return;
       }
       renderSBSegments(videoEl.duration);
       updateSBBar();
+      if (onReady) onReady();
     });
 
     if (_sbCheckInterval) clearInterval(_sbCheckInterval);
@@ -704,14 +711,6 @@ var LV = (function() {
     });
   })();
 
-  /* ── SponsorBlock auto-skip toggle ── */
-  function toggleAutoSkip() {
-    _sbAutoSkip = !_sbAutoSkip;
-    var label = _sbAutoSkip ? '⏸ Auto' : '▶ Auto';
-    var btns = sbBar.querySelectorAll('.sb-skip-btn');
-    for (var i = 0; i < btns.length; i++) btns[i].textContent = label;
-  }
-
   /* ── Video events for SponsorBlock ── */
   videoEl.addEventListener('timeupdate', updateSBProgress);
   videoEl.addEventListener('loadedmetadata', function() {
@@ -723,7 +722,7 @@ var LV = (function() {
 
   /* ── Public API ── */
   return { pickFolder: pickFolder, search: search, toggleSort: toggleSort, close: close,
-           toggleOrientation: toggleOrientation, toggleAutoSkip: toggleAutoSkip };
+           toggleOrientation: toggleOrientation };
 
 })();
 </script>
