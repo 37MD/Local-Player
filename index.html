@@ -123,7 +123,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .player-topbar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; background: rgba(0,0,0,.85);
-  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10005;
   padding-top: max(8px, env(safe-area-inset-top, 8px));
   padding-left: max(12px, env(safe-area-inset-left, 12px));
   padding-right: max(12px, env(safe-area-inset-right, 12px));
@@ -894,14 +894,14 @@ var LV = (function() {
       _brightnessOverlay = document.createElement('div');
       _brightnessOverlay.id = 'brightness-overlay';
       // Transparent but touchable zone on left 30%
-      _brightnessOverlay.style.cssText = 'position:fixed;left:0;top:0;width:30%;height:100%;z-index:10001;background:transparent;display:block;pointer-events:auto;touch-action:none;';
+      _brightnessOverlay.style.cssText = 'position:fixed;left:0;top:60px;width:30%;height:calc(100% - 60px);z-index:10001;background:transparent;display:block;pointer-events:auto;touch-action:none;';
       document.body.appendChild(_brightnessOverlay);
     }
     if (!_volumeOverlay) {
       _volumeOverlay = document.createElement('div');
       _volumeOverlay.id = 'volume-overlay';
       // Transparent but touchable zone on right 30%
-      _volumeOverlay.style.cssText = 'position:fixed;right:0;top:0;width:30%;height:100%;z-index:10001;background:transparent;display:block;pointer-events:auto;touch-action:none;';
+      _volumeOverlay.style.cssText = 'position:fixed;right:0;top:60px;width:30%;height:calc(100% - 60px);z-index:10001;background:transparent;display:block;pointer-events:auto;touch-action:none;';
       document.body.appendChild(_volumeOverlay);
     }
     if (!_gestureHUD) {
