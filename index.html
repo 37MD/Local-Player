@@ -587,10 +587,6 @@ var LV = (function() {
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(function(){});
-    }
-
     // Request fullscreen on overlay (contains video) after brief delay
     setTimeout(function() {
       var fsEl = overlay;
@@ -649,14 +645,6 @@ var LV = (function() {
       document.webkitExitFullscreen();
     } else if (document.msExitFullscreen) {
       document.msExitFullscreen();
-    }
-    // Also try on overlay in case it was the fullscreen element
-    if (overlay && overlay !== document.fullscreenElement) {
-      // no-op, document.exitFullscreen handles it
-    }
-
-    if (screen.orientation && screen.orientation.unlock) {
-      screen.orientation.unlock();
     }
 
     onVideoClose();
