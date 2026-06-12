@@ -264,6 +264,13 @@ var LV = (function() {
   var _pullThreshold = 80;
   var _pullActive = false;
 
+  /* ── Gesture controls (brightness/volume) ── */
+  var _gestureActive = null; // 'brightness' | 'volume'
+  var _gestureStartY = 0;
+  var _gestureStartVal = 0;
+  var _brightnessOverlay = null;
+  var _volumeOverlay = null;
+
   /* ── Supported video formats ── */
   var MEDIA_EXTS = /\.(mp4|mkv|webm|mov|avi|m4v|3gp|ts|flv|wmv|mp3|wav|flac|aac|ogg|m4a|opus|wma)$/i;
   var AUDIO_EXTS = /\.(mp3|wav|flac|aac|ogg|m4a|opus|wma)$/i;
@@ -603,18 +610,6 @@ var LV = (function() {
       if (!orientationLocked) showOrientationHint();
     }
 
-    // Request fullscreen on overlay (contains video) after brief delay
-    setTimeout(function() {
-      var fsEl = overlay;
-      if (fsEl.requestFullscreen) {
-        fsEl.requestFullscreen().catch(function(){});
-      } else if (fsEl.webkitRequestFullscreen) {
-        fsEl.webkitRequestFullscreen();
-      } else if (fsEl.msRequestFullscreen) {
-        fsEl.msRequestFullscreen();
-      }
-    }, 100);
-
     // Start playback IMMEDIATELY (preserves user gesture chain for autoplay)
     var playPromise = videoEl.play();
     if (playPromise) {
@@ -622,6 +617,19 @@ var LV = (function() {
         // Autoplay blocked - user must tap to play
       });
     }
+
+    // Request fullscreen on video element immediately (within same gesture chain)
+    var fsEl = videoEl;
+    if (fsEl.requestFullscreen) {
+      fsEl.requestFullscreen().catch(function(){});
+    } else if (fsEl.webkitRequestFullscreen) {
+      fsEl.webkitRequestFullscreen();
+    } else if (fsEl.msRequestFullscreen) {
+      fsEl.msRequestFullscreen();
+    }
+
+    // Setup gesture controls (brightness left 30%, volume right 30%)
+    setupGestureControls();
 
     // SponsorBlock fetch in background (non-blocking)
     onVideoOpen(f, function() {
@@ -663,6 +671,16 @@ var LV = (function() {
       });
     }
 
+    // Request fullscreen on video element immediately (within same gesture chain)
+    var fsEl = videoEl;
+    if (fsEl.requestFullscreen) {
+      fsEl.requestFullscreen().catch(function(){});
+    } else if (fsEl.webkitRequestFullscreen) {
+      fsEl.webkitRequestFullscreen();
+    } else if (fsEl.msRequestFullscreen) {
+      fsEl.msRequestFullscreen();
+    }
+
     // SponsorBlock fetch in background
     onVideoOpen(f, function() {
       if (_sbSegments.length && videoEl.duration && isFinite(videoEl.duration)) {
@@ -681,6 +699,9 @@ var LV = (function() {
     videoEl.src = '';
     overlay.classList.remove('active');
     document.body.style.overflow = '';
+
+    // Teardown gesture controls
+    teardownGestureControls();
 
     // Exit fullscreen
     if (document.exitFullscreen) {
