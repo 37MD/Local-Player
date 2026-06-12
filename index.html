@@ -123,7 +123,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .player-topbar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; background: rgba(0,0,0,.85);
-  position: absolute; top: 0; left: 0; right: 0; z-index: 10005;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10020;
   padding-top: max(8px, env(safe-area-inset-top, 8px));
   padding-left: max(12px, env(safe-area-inset-left, 12px));
   padding-right: max(12px, env(safe-area-inset-right, 12px));
@@ -780,35 +780,44 @@ var LV = (function() {
     var f = _files[idx];
     if (!f || !f.cached) return;
 
-    if (!_cachedDirHandle) {
-      showRefreshToast('\u26A0\uFE0F No folder access \u2014 tap Open Folder');
-      return;
-    }
-
     // Show loading state on the item
     var item = grid.querySelector('[data-idx="' + idx + '"]');
-    if (item) {
-      var playIcon = item.querySelector('.play-icon');
-      if (playIcon) playIcon.textContent = '\u23F3';
-    }
+    var playIcon = item ? item.querySelector('.play-icon') : null;
+    if (playIcon) playIcon.textContent = '\u23F3';
 
-    _cachedDirHandle.requestPermission({ mode: 'read' }).then(function(status) {
-      if (status !== 'granted') {
-        showRefreshToast('\u26A0\uFE0F Permission denied');
+    function tryPlayWithHandle(handle) {
+      if (!handle) {
+        showRefreshToast('\u26A0\uFE0F No folder access \u2014 tap Open Folder');
         if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
         return;
       }
-      // Permission granted \u2014 re-scan to get blob URLs
-      scanDir(_cachedDirHandle).then(function(files) {
-        loadFiles(files);
-        // Now play the file (it has a blob URL now)
-        var refreshed = _files.find(function(x) { return x.name === f.name; });
-        if (refreshed) play(refreshed.idx);
+      _cachedDirHandle = handle;
+      handle.requestPermission({ mode: 'read' }).then(function(status) {
+        if (status !== 'granted') {
+          showRefreshToast('\u26A0\uFE0F Permission denied \u2014 tap Open Folder');
+          if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
+          return;
+        }
+        scanDir(handle).then(function(files) {
+          loadFiles(files);
+          _files.forEach(function(x) { x.cached = false; });
+          var refreshed = _files.find(function(x) { return x.name === f.name; });
+          if (refreshed) play(refreshed.idx);
+        });
+      }).catch(function() {
+        showRefreshToast('\u26A0\uFE0F Permission error \u2014 tap Open Folder');
+        if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
       });
-    }).catch(function() {
-      showRefreshToast('\u26A0\uFE0F Permission error');
-      if (playIcon) playIcon.textContent = isAudio(f.name) ? '\uD83C\uDFB5' : '\u25B6';
-    });
+    }
+
+    // If handle already loaded, use it. Otherwise load from IndexedDB first.
+    if (_cachedDirHandle) {
+      tryPlayWithHandle(_cachedDirHandle);
+    } else {
+      loadHandle().then(function(handle) {
+        tryPlayWithHandle(handle);
+      });
+    }
   }
 
   function showOrientationHint() {
@@ -966,20 +975,20 @@ var LV = (function() {
       _brightnessOverlay = document.createElement('div');
       _brightnessOverlay.id = 'brightness-overlay';
       // Transparent but touchable zone on left 30%
-      _brightnessOverlay.style.cssText = 'position:fixed;left:0;top:60px;width:30%;height:calc(100% - 60px);z-index:10001;background:transparent;display:block;pointer-events:auto;touch-action:none;';
+      _brightnessOverlay.style.cssText = 'position:fixed;left:0;top:0;width:30%;height:100%;z-index:9990;background:transparent;display:block;pointer-events:auto;touch-action:none;';
       document.body.appendChild(_brightnessOverlay);
     }
     if (!_volumeOverlay) {
       _volumeOverlay = document.createElement('div');
       _volumeOverlay.id = 'volume-overlay';
       // Transparent but touchable zone on right 30%
-      _volumeOverlay.style.cssText = 'position:fixed;right:0;top:60px;width:30%;height:calc(100% - 60px);z-index:10001;background:transparent;display:block;pointer-events:auto;touch-action:none;';
+      _volumeOverlay.style.cssText = 'position:fixed;right:0;top:0;width:30%;height:100%;z-index:9990;background:transparent;display:block;pointer-events:auto;touch-action:none;';
       document.body.appendChild(_volumeOverlay);
     }
     if (!_gestureHUD) {
       _gestureHUD = document.createElement('div');
       _gestureHUD.id = 'gesture-hud';
-      _gestureHUD.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.75);color:#fff;font-size:22px;font-weight:700;padding:16px 28px;border-radius:14px;z-index:10002;display:none;pointer-events:none;text-align:center;min-width:130px;letter-spacing:.02em;';
+      _gestureHUD.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.75);color:#fff;font-size:22px;font-weight:700;padding:16px 28px;border-radius:14px;z-index:10010;display:none;pointer-events:none;text-align:center;min-width:130px;letter-spacing:.02em;';
       document.body.appendChild(_gestureHUD);
     }
 
@@ -1037,7 +1046,10 @@ var LV = (function() {
   function onGestureStart(e) {
     var touch = e.touches[0];
     var x = touch.clientX;
+    var y = touch.clientY;
     var w = window.innerWidth;
+    // Skip gesture in top 70px (topbar zone) — let buttons work
+    if (y < 70) return;
     if (x < w * 0.3) {
       _gestureActive = 'brightness';
       _gestureStartY = touch.clientY;
