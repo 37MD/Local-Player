@@ -214,7 +214,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">⏮</button>
     <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">⏭</button>
   </div>
-  <video id="local-video" playsinline preload="metadata"></video>
+  <video id="local-video" playsinline muted preload="metadata"></video>
   <div id="sb-timeline-wrap"><div class="sb-progress" id="sb-progress"></div></div>
   <div id="sb-bar"></div>
 </div>
@@ -616,10 +616,15 @@ var LV = (function() {
     }
 
     // Start playback IMMEDIATELY (preserves user gesture chain for autoplay)
+    videoEl.muted = true;
     var playPromise = videoEl.play();
     if (playPromise) {
-      playPromise.catch(function() {
+      playPromise.then(function() {
+        // Unmute after autoplay succeeds
+        videoEl.muted = false;
+      }).catch(function() {
         // Autoplay blocked - user must tap to play
+        videoEl.muted = false;
       });
     }
 
