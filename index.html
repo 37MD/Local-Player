@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index5</title>
+<title>index8</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -62,18 +62,24 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 /* ── Scan spinner ── */
 #scan-spinner {
-  display: none;
+  visibility: hidden;
+  opacity: 0;
   width: 26px; height: 26px;
   border: 3px solid rgba(255,255,255,.18);
   border-top-color: var(--lv-hl);
   border-radius: 50%;
-  animation: spin .7s linear infinite;
   flex-shrink: 0;
-  transition: border-color .4s, border-top-color .4s;
+  transition: border-color .4s, border-top-color .4s, opacity .2s;
   margin-right: 4px;
 }
-#scan-spinner.active { display: block; }
+#scan-spinner.active {
+  visibility: visible;
+  opacity: 1;
+  animation: spin .7s linear infinite;
+}
 #scan-spinner.done {
+  visibility: visible;
+  opacity: 1;
   border-color: #4caf50;
   border-top-color: #4caf50;
   animation: none;
@@ -269,7 +275,8 @@ var LV = (function() {
     dbName: 'LocalVideosDB',
     storeName: 'session',
     cacheStore: 'fileCache',
-    version: 2
+    blobStore: 'fileBlobs',   // stores actual File objects for zero-permission restore
+    version: 3
   };
 
   /* \u2500\u2500 State \u2500\u2500 */
@@ -297,12 +304,11 @@ var LV = (function() {
 
   /* ── Scan spinner ── */
   function showSpinner() {
-    scanSpinner.style.display = 'block';
     scanSpinner.className = 'active';
   }
   function hideSpinner() {
     scanSpinner.className = 'done';
-    setTimeout(function() { scanSpinner.style.display = 'none'; scanSpinner.className = ''; }, 2500);
+    setTimeout(function() { scanSpinner.className = ''; }, 2500);
   }
 
   /* \u2500\u2500 Pull to refresh \u2500\u2500 */
@@ -348,12 +354,14 @@ var LV = (function() {
   function openDB() {
     return new Promise(function(resolve, reject) {
       var req = indexedDB.open(CONFIG.dbName, CONFIG.version);
-      req.onupgradeneeded = function() {
+      req.onupgradeneeded = function(e) {
         var db = req.result;
         if (!db.objectStoreNames.contains(CONFIG.storeName))
           db.createObjectStore(CONFIG.storeName);
         if (!db.objectStoreNames.contains(CONFIG.cacheStore))
           db.createObjectStore(CONFIG.cacheStore);
+        if (!db.objectStoreNames.contains(CONFIG.blobStore))
+          db.createObjectStore(CONFIG.blobStore);
       };
       req.onsuccess = function() { resolve(req.result); };
       req.onerror = function() { reject(req.error); };
@@ -389,13 +397,22 @@ var LV = (function() {
 
   /* \u2500\u2500 File cache (IndexedDB) \u2500\u2500 */
   function saveFileCache(files) {
-    // Store file metadata (no blob URLs — they don't persist)
-    var cache = files.map(function(f) {
-      return { name: f.name, ext: f.ext, size: f.size };
-    });
+    // Store full File objects as blobs — this is what enables zero-permission restore
     openDB().then(function(db) {
-      var tx = db.transaction(CONFIG.cacheStore, 'readwrite');
-      tx.objectStore(CONFIG.cacheStore).put(cache, 'files');
+      var tx = db.transaction([CONFIG.cacheStore, CONFIG.blobStore], 'readwrite');
+      // Metadata list for fast list render
+      var meta = files.map(function(f) {
+        return { name: f.name, ext: f.ext, size: f.size };
+      });
+      tx.objectStore(CONFIG.cacheStore).put(meta, 'files');
+      // Store each File blob keyed by filename
+      var blobStore = tx.objectStore(CONFIG.blobStore);
+      blobStore.clear(); // replace all — avoid stale files from old folder
+      files.forEach(function(f) {
+        if (f.file) {
+          try { blobStore.put(f.file, f.name); } catch(e) {}
+        }
+      });
     }).catch(function(){});
   }
 
@@ -406,6 +423,33 @@ var LV = (function() {
         var req = tx.objectStore(CONFIG.cacheStore).get('files');
         req.onsuccess = function() { resolve(req.result || []); };
         req.onerror = function() { resolve([]); };
+      });
+    }).catch(function() { return []; });
+  }
+
+  // Load all stored File blobs and reconstruct playable file objects
+  function loadBlobCache() {
+    return openDB().then(function(db) {
+      return new Promise(function(resolve) {
+        var tx = db.transaction(CONFIG.blobStore, 'readonly');
+        var req = tx.objectStore(CONFIG.blobStore).getAll();
+        var keyReq = tx.objectStore(CONFIG.blobStore).getAllKeys();
+        var blobs = null, keys = null;
+        req.onsuccess = function() { blobs = req.result; if (keys !== null) done(); };
+        keyReq.onsuccess = function() { keys = keyReq.result; if (blobs !== null) done(); };
+        req.onerror = function() { resolve([]); };
+        function done() {
+          if (!blobs || !blobs.length) { resolve([]); return; }
+          var files = [];
+          blobs.forEach(function(blob, i) {
+            var name = keys[i];
+            if (!name || !blob) return;
+            var ext = name.split('.').pop().toUpperCase();
+            var url = URL.createObjectURL(blob);
+            files.push({ file: blob, name: name, displayName: name, ext: ext, size: blob.size, url: url, fromBlob: true });
+          });
+          resolve(files);
+        }
       });
     }).catch(function() { return []; });
   }
@@ -1434,41 +1478,70 @@ var LV = (function() {
   var _cachedDirHandle = null;  // live handle when permission granted
 
   (function initRestore() {
-    // Kill any stale unmute banner from a previous session
     var oldBanner = document.getElementById('restore-banner');
     if (oldBanner) oldBanner.remove();
 
     _rootName = loadRootName();
     updateHeader();
 
-    // STEP 1: Load cached file list instantly — user sees playlist immediately
-    loadFileCache().then(function(cached) {
-      if (cached && cached.length > 0) {
-        // Show cached files (no blob URLs yet — they can't play, but list shows)
-        _files = cached.map(function(c, i) {
-          return { idx: i, name: c.name, ext: c.ext, size: c.size, url: null, cached: true };
-        });
-        _filtered = _files.slice();
-        renderGrid(_filtered);
-        countEl.textContent = cached.length + ' file' + (cached.length !== 1 ? 's' : '') + ' \u2014 tap to play';
+    // PRIMARY PATH: restore directly from stored File blobs — zero permission needed
+    // Files are stored in IndexedDB as actual Blob/File objects, fully playable.
+    loadBlobCache().then(function(blobFiles) {
+      if (blobFiles && blobFiles.length > 0) {
+        // Sort by name for consistency
+        blobFiles.sort(function(a,b) { return a.name.localeCompare(b.name); });
+        loadFiles(blobFiles);
+        showRefreshToast('\u2713 ' + blobFiles.length + ' file' + (blobFiles.length !== 1 ? 's' : '') + ' restored');
+        // Silently try to also get fresh directory handle in background
+        tryRefreshDirHandle();
+        return;
       }
-    });
 
-    // STEP 2: Try to get live handle for actual playback
+      // FALLBACK: no blobs stored yet — show metadata list and request directory permission
+      loadFileCache().then(function(cached) {
+        if (cached && cached.length > 0) {
+          _files = cached.map(function(c, i) {
+            return { idx: i, name: c.name, ext: c.ext, size: c.size, url: null, cached: true };
+          });
+          _filtered = _files.slice();
+          renderGrid(_filtered);
+          countEl.textContent = cached.length + ' file' + (cached.length !== 1 ? 's' : '') + ' \u2014 tap to play';
+        }
+        // Try directory handle for live blob URLs
+        loadHandle().then(function(handle) {
+          if (!handle) return;
+          _cachedDirHandle = handle;
+          handle.queryPermission({ mode: 'read' }).then(function(status) {
+            if (status === 'granted') {
+              restoreHandle(handle);
+            } else if (status === 'prompt') {
+              showRestoreBanner(handle);
+            }
+          });
+        });
+      });
+    });
+  })();
+
+  // Silently attempt to refresh from directory handle in background (after blob restore)
+  function tryRefreshDirHandle() {
     loadHandle().then(function(handle) {
       if (!handle) return;
       _cachedDirHandle = handle;
       handle.queryPermission({ mode: 'read' }).then(function(status) {
         if (status === 'granted') {
-          // Live handle ready — re-scan for fresh blob URLs
-          restoreHandle(handle);
-        } else if (status === 'prompt') {
-          // Need user gesture — show restore banner (still have cached list visible)
-          showRestoreBanner(handle);
+          // Silently re-scan in background to pick up new/deleted files
+          scanDir(handle).then(function(files) {
+            if (files.length > 0) {
+              loadFiles(files);
+              saveFileCache(files); // refresh blob store with latest
+            }
+          }).catch(function(){});
         }
-      });
-    });
-  })();
+        // If 'prompt' or 'denied', blob restore already succeeded — no banner needed
+      }).catch(function(){});
+    }).catch(function(){});
+  }
 
   function showRestoreBanner(handle) {
     var name = loadRootName() || (handle && handle.name) || 'previous folder';
@@ -1525,8 +1598,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index5',
-      short_name: 'index5',
+      name: 'index8',
+      short_name: 'index8',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
