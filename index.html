@@ -583,7 +583,6 @@ var LV = (function() {
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 
-    lockLandscape();
     enterFullscreen();
 
     onVideoOpen(f, function() {
@@ -605,7 +604,6 @@ var LV = (function() {
 
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
-    lockLandscape();
     enterFullscreen();
 
     onVideoOpen(f, function() {
@@ -639,7 +637,9 @@ var LV = (function() {
   function enterFullscreen() {
     var el = overlay;
     try {
-      (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
+      var p = (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el);
+      if (p && p.then) p.then(function() { lockLandscape(); }).catch(function(){});
+      else lockLandscape();
     } catch(e) {}
   }
   function exitFullscreen() {
