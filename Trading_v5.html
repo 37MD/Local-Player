@@ -1863,7 +1863,7 @@ var LocalVideos = (function() {
   var _sbInterval = null;
   var _lastTime   = -1;
 
-  var VIDEO_EXTS  = ['mp4','mkv','avi','mov','webm','m4v','3gp','flv','wmv','mpeg','mpg'];
+  var VIDEO_EXTS  = ['mp4','mkv','avi','mov','webm','m4v','3gp','flv','wmv','mpeg','mpg','mp3','wav','flac','aac','ogg','m4a','opus','wma'];
 
   /* ── DOM refs ── */
   function _zone()      { return document.getElementById('local-folder-zone'); }
@@ -1878,24 +1878,27 @@ var LocalVideos = (function() {
 
   /* ── Folder picker ── */
   function pickFolder() {
-    if (window.showDirectoryPicker) {
+    if (window.showDirectoryPicker && location.protocol !== 'file:' && location.protocol !== 'content:') {
       window.showDirectoryPicker({ mode: 'read' })
         .then(function(dirHandle) { _readDirHandle(dirHandle); })
-        .catch(function(e) { if (e.name !== 'AbortError') alert('Could not open folder: ' + e.message); });
+        .catch(function(e) { if (e.name !== 'AbortError') _legacyFallback(); });
     } else {
-      // Fallback: hidden <input type=file webkitdirectory>
-      var inp = document.getElementById('_lv_file_input');
-      if (!inp) {
-        inp = document.createElement('input');
-        inp.type = 'file'; inp.id = '_lv_file_input';
-        inp.setAttribute('multiple', '');
-        inp.setAttribute('accept', 'video/*');
-        inp.style.display = 'none';
-        document.body.appendChild(inp);
-        inp.addEventListener('change', function() { _readFileList(inp.files); });
-      }
-      inp.click();
+      _legacyFallback();
     }
+  }
+
+  function _legacyFallback() {
+    var inp = document.getElementById('_lv_file_input');
+    if (!inp) {
+      inp = document.createElement('input');
+      inp.type = 'file'; inp.id = '_lv_file_input';
+      inp.setAttribute('multiple', '');
+      inp.setAttribute('accept', 'video/*,audio/*');
+      inp.style.display = 'none';
+      document.body.appendChild(inp);
+      inp.addEventListener('change', function() { _readFileList(inp.files); });
+    }
+    inp.click();
   }
 
   /* ── Read File System Access API directory ── */
