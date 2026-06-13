@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index12</title>
+<title>index13</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -275,8 +275,10 @@ var LV = (function() {
   var CONFIG = {
     dbName:     'LocalVideosDB',
     storeName:  'session',
-    metaStore:  'fileMeta',   // stores filename+size metadata only (tiny, no quota issues)
-    version:    4             // bumped: drops old blobStore, adds metaStore
+    metaStore:  'fileMeta',   // all filenames+sizes (tiny)
+    blobStore:  'fileBlobs',  // actual File blobs — rolling window of CHUNK_SIZE files
+    version:    5,
+    CHUNK_SIZE: 10            // how many files to pre-cache at a time
   };
 
   /* \u2500\u2500 State \u2500\u2500 */
@@ -360,19 +362,154 @@ var LV = (function() {
         var db = req.result;
         // Clean up old stores from previous versions
         ['session','fileCache','fileBlobs','cacheStore','blobStore'].forEach(function(s) {
-          if (db.objectStoreNames.contains(s)) db.deleteObjectStore(s);
+          if (db.objectStoreNames.contains(s)) try { db.deleteObjectStore(s); } catch(e2) {}
         });
         if (!db.objectStoreNames.contains(CONFIG.storeName))
           db.createObjectStore(CONFIG.storeName);
         if (!db.objectStoreNames.contains(CONFIG.metaStore))
           db.createObjectStore(CONFIG.metaStore);
+        if (!db.objectStoreNames.contains(CONFIG.blobStore))
+          db.createObjectStore(CONFIG.blobStore);
       };
       req.onsuccess = function() { resolve(req.result); };
       req.onerror   = function() { reject(req.error); };
     });
   }
 
-  // Save just filenames + sizes — a few KB even for 1000 files, never hits quota
+  /* ── Blob cache: store/load individual File blobs keyed by filename ── */
+  // Only a rolling window of CHUNK_SIZE files is stored at a time — never hits quota.
+  // Each blob is stored independently so we can add/remove without rewriting all.
+
+  function saveBlobToCache(file) {
+    // Store a single File blob. Silently ignore quota errors (file too large).
+    openDB().then(function(db) {
+      var tx = db.transaction(CONFIG.blobStore, 'readwrite');
+      try { tx.objectStore(CONFIG.blobStore).put(file, file.name); } catch(e) {}
+    }).catch(function(){});
+  }
+
+  function removeBlobFromCache(name) {
+    openDB().then(function(db) {
+      var tx = db.transaction(CONFIG.blobStore, 'readwrite');
+      tx.objectStore(CONFIG.blobStore).delete(name);
+    }).catch(function(){});
+  }
+
+  function loadBlobFromCache(name) {
+    return openDB().then(function(db) {
+      return new Promise(function(resolve) {
+        var tx  = db.transaction(CONFIG.blobStore, 'readonly');
+        var req = tx.objectStore(CONFIG.blobStore).get(name);
+        req.onsuccess = function() { resolve(req.result || null); };
+        req.onerror   = function() { resolve(null); };
+      });
+    }).catch(function() { return null; });
+  }
+
+  function loadAllCachedNames() {
+    return openDB().then(function(db) {
+      return new Promise(function(resolve) {
+        var tx  = db.transaction(CONFIG.blobStore, 'readonly');
+        var req = tx.objectStore(CONFIG.blobStore).getAllKeys();
+        req.onsuccess = function() { resolve(req.result || []); };
+        req.onerror   = function() { resolve([]); };
+      });
+    }).catch(function() { return []; });
+  }
+
+  function clearBlobCache() {
+    openDB().then(function(db) {
+      db.transaction(CONFIG.blobStore, 'readwrite').objectStore(CONFIG.blobStore).clear();
+    }).catch(function(){});
+  }
+
+  /* ── Rolling blob cache engine ── */
+  // Strategy:
+  //   • On folder open: immediately cache the first CHUNK_SIZE files (sorted order)
+  //   • When a file hits 50% playback OR is skipped: cache the next CHUNK_SIZE files
+  //     starting from current position, evict blobs outside the window
+  //   • On cold restart: any files with cached blobs get live URLs immediately;
+  //     the rest show from metadata and need folder reload for playback
+  //   • Window stays small (10 files max) so quota is never hit even for 100MB+ files
+
+  var _cacheWindow  = [];   // filenames currently in the blob cache window
+  var _cacheTriggered = {}; // guard: filename → true, prevents double-trigger
+
+  function cacheWindowAround(centerIdx) {
+    // Determine the sorted file list (use _filtered if available, else _files)
+    var list = _filtered.length ? _filtered : _files;
+    if (!list.length) return;
+
+    // Find centerIdx position in sorted list
+    var pos = 0;
+    list.forEach(function(f, i) { if (f.idx === centerIdx) pos = i; });
+
+    // Window: current + next CHUNK_SIZE files (not behind, always look ahead)
+    var start = pos;
+    var end   = Math.min(list.length, start + CONFIG.CHUNK_SIZE);
+    var window = list.slice(start, end).map(function(f) { return f.name; });
+
+    // Files to evict (were cached, no longer in window)
+    _cacheWindow.forEach(function(name) {
+      if (window.indexOf(name) === -1) {
+        removeBlobFromCache(name);
+      }
+    });
+
+    // Files to add (in window, not yet cached, have live File object)
+    var toAdd = window.filter(function(name) { return _cacheWindow.indexOf(name) === -1; });
+    _cacheWindow = window;
+
+    // Write new blobs one at a time with a small delay so we don't block playback
+    var delay = 0;
+    toAdd.forEach(function(name) {
+      var fileObj = _liveFileMap[name];
+      if (!fileObj) return; // no live File (needsReload state)
+      setTimeout(function() { saveBlobToCache(fileObj); }, delay);
+      delay += 200; // stagger writes: 200ms apart
+    });
+
+    if (toAdd.length) {
+      console.log('[Cache] window:', window, '| adding:', toAdd);
+    }
+  }
+
+  // Called from timeupdate when playback hits 50%
+  function onHalfwayTrigger(idx) {
+    var f = _files[idx];
+    if (!f || _cacheTriggered[f.name]) return;
+    _cacheTriggered[f.name] = true;
+    cacheWindowAround(idx);
+  }
+
+  // Called when user skips to next track
+  function onSkipTrigger(idx) {
+    cacheWindowAround(idx);
+  }
+
+  // On folder open: seed the cache with the first CHUNK_SIZE sorted files
+  function seedInitialCache(sortedFiles) {
+    _cacheTriggered = {};
+    _cacheWindow    = [];
+    clearBlobCache();
+    // Small delay so UI renders first
+    setTimeout(function() { cacheWindowAround(sortedFiles[0] ? sortedFiles[0].idx : 0); }, 800);
+  }
+
+  // On cold restart: files that have cached blobs become immediately playable
+  // Returns promise resolving to { name → blob:URL } map
+  function hydrateFromBlobCache(metaList) {
+    return loadAllCachedNames().then(function(cachedNames) {
+      if (!cachedNames.length) return {};
+      var urlMap = {};
+      var promises = cachedNames.map(function(name) {
+        return loadBlobFromCache(name).then(function(blob) {
+          if (blob) urlMap[name] = URL.createObjectURL(blob);
+        });
+      });
+      return Promise.all(promises).then(function() { return urlMap; });
+    }).catch(function() { return {}; });
+  }
   function saveFileMeta(files) {
     var meta = files.map(function(f) {
       return { name: f.name, ext: f.ext, size: f.size };
@@ -492,8 +629,8 @@ var LV = (function() {
   function playNext() {
     var idx = _shuffleMode ? nextShuffleIdx() : nextSequentialIdx();
     if (idx === null) return;
-    // Always treat next/skip as auto-play so playback continues
     _autoPlayMode = true;
+    onSkipTrigger(idx);   // trigger cache window advance on skip
     play(idx, 'user');
   }
 
@@ -536,6 +673,9 @@ var LV = (function() {
       // Save only metadata — a few KB regardless of how many/large files
       saveFileMeta(files);
 
+      // Seed blob cache with first CHUNK_SIZE files for instant cold-restart playback
+      seedInitialCache(_filtered.length ? _filtered : files);
+
       // Show count confirmation
       showRefreshToast('\u2713 ' + files.length + '/' + allFiles.length + ' media ready');
     };
@@ -574,6 +714,9 @@ var LV = (function() {
       loadFiles(files);
       hideSpinner();
       saveFileMeta(files);
+
+      // Re-seed blob cache from fresh live files
+      seedInitialCache(_filtered.length ? _filtered : files);
 
       var banner = document.getElementById('reload-banner');
       if (banner) banner.remove();
@@ -1559,17 +1702,38 @@ var LV = (function() {
     loadFileMeta().then(function(meta) {
       if (!meta || !meta.length) return; // first launch
 
-      // Show full list instantly from metadata — names + sizes, no playback yet
+      // Build full file list from metadata (names + sizes only — no playback yet)
       _files = meta.map(function(m, i) {
         return { idx: i, name: m.name, displayName: m.name,
                  ext: m.ext, size: m.size,
                  url: null, needsReload: true };
       });
-      sortFiles();
-      renderGrid(_filtered);
 
-      // Show reload banner — one tap, no browsing, just confirm same folder
-      showReloadBanner(_rootName, meta.length);
+      // Hydrate any files that have cached blobs → give them live URLs immediately
+      hydrateFromBlobCache(meta).then(function(urlMap) {
+        var hydratedCount = 0;
+        _files.forEach(function(f) {
+          if (urlMap[f.name]) {
+            f.url        = urlMap[f.name];
+            f.needsReload = false;
+            f.fromBlob   = true;
+            hydratedCount++;
+          }
+        });
+
+        sortFiles();
+        renderGrid(_filtered);
+
+        var total = meta.length;
+        if (hydratedCount > 0) {
+          // Some files playable immediately, rest need folder reload
+          showRefreshToast('\u25B6 ' + hydratedCount + ' ready \u2014 ' + (total - hydratedCount) + ' need reload');
+        }
+
+        // Always show reload banner — needed for non-cached files
+        // Banner dismisses itself once folder is reloaded
+        showReloadBanner(_rootName, total);
+      });
     });
   })();
 
@@ -1581,8 +1745,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index12',
-      short_name: 'index12',
+      name: 'index13',
+      short_name: 'index13',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
@@ -1633,6 +1797,12 @@ var LV = (function() {
     if (_currentIdx !== null) {
       if (_saveTimer) clearTimeout(_saveTimer);
       _saveTimer = setTimeout(saveState, 5000);
+      // Trigger next-chunk cache when current file hits 50%
+      if (videoEl.duration && isFinite(videoEl.duration) && videoEl.duration > 0) {
+        if (videoEl.currentTime / videoEl.duration >= 0.5) {
+          onHalfwayTrigger(_currentIdx);
+        }
+      }
     }
   });
   videoEl.addEventListener('pause', saveState);
