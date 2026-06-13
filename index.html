@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index11</title>
+<title>index12</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -273,11 +273,10 @@ var LV = (function() {
 
   /* \u2500\u2500 Config \u2500\u2500 */
   var CONFIG = {
-    dbName: 'LocalVideosDB',
-    storeName: 'session',
-    cacheStore: 'fileCache',
-    blobStore: 'fileBlobs',   // stores actual File objects for zero-permission restore
-    version: 3
+    dbName:     'LocalVideosDB',
+    storeName:  'session',
+    metaStore:  'fileMeta',   // stores filename+size metadata only (tiny, no quota issues)
+    version:    4             // bumped: drops old blobStore, adds metaStore
   };
 
   /* \u2500\u2500 State \u2500\u2500 */
@@ -359,16 +358,52 @@ var LV = (function() {
       var req = indexedDB.open(CONFIG.dbName, CONFIG.version);
       req.onupgradeneeded = function(e) {
         var db = req.result;
+        // Clean up old stores from previous versions
+        ['session','fileCache','fileBlobs','cacheStore','blobStore'].forEach(function(s) {
+          if (db.objectStoreNames.contains(s)) db.deleteObjectStore(s);
+        });
         if (!db.objectStoreNames.contains(CONFIG.storeName))
           db.createObjectStore(CONFIG.storeName);
-        if (!db.objectStoreNames.contains(CONFIG.cacheStore))
-          db.createObjectStore(CONFIG.cacheStore);
-        if (!db.objectStoreNames.contains(CONFIG.blobStore))
-          db.createObjectStore(CONFIG.blobStore);
+        if (!db.objectStoreNames.contains(CONFIG.metaStore))
+          db.createObjectStore(CONFIG.metaStore);
       };
       req.onsuccess = function() { resolve(req.result); };
-      req.onerror = function() { reject(req.error); };
+      req.onerror   = function() { reject(req.error); };
     });
+  }
+
+  // Save just filenames + sizes — a few KB even for 1000 files, never hits quota
+  function saveFileMeta(files) {
+    var meta = files.map(function(f) {
+      return { name: f.name, ext: f.ext, size: f.size };
+    });
+    openDB().then(function(db) {
+      var tx = db.transaction(CONFIG.metaStore, 'readwrite');
+      tx.objectStore(CONFIG.metaStore).put(meta, 'list');
+      tx.objectStore(CONFIG.metaStore).put(_rootName || '', 'folder');
+    }).catch(function(){});
+  }
+
+  function loadFileMeta() {
+    return openDB().then(function(db) {
+      return new Promise(function(resolve) {
+        var tx  = db.transaction(CONFIG.metaStore, 'readonly');
+        var req = tx.objectStore(CONFIG.metaStore).get('list');
+        req.onsuccess = function() { resolve(req.result || []); };
+        req.onerror   = function() { resolve([]); };
+      });
+    }).catch(function() { return []; });
+  }
+
+  function loadSavedFolder() {
+    return openDB().then(function(db) {
+      return new Promise(function(resolve) {
+        var tx  = db.transaction(CONFIG.metaStore, 'readonly');
+        var req = tx.objectStore(CONFIG.metaStore).get('folder');
+        req.onsuccess = function() { resolve(req.result || ''); };
+        req.onerror   = function() { resolve(''); };
+      });
+    }).catch(function() { return ''; });
   }
 
   function storeRootName(name) {
@@ -377,33 +412,6 @@ var LV = (function() {
 
   function loadRootName() {
     try { return localStorage.getItem('lv_rootName') || ''; } catch(e) { return ''; }
-  }
-
-  // Load all stored File blobs and reconstruct playable file objects
-  function loadBlobCache() {
-    return openDB().then(function(db) {
-      return new Promise(function(resolve) {
-        var tx = db.transaction(CONFIG.blobStore, 'readonly');
-        var req = tx.objectStore(CONFIG.blobStore).getAll();
-        var keyReq = tx.objectStore(CONFIG.blobStore).getAllKeys();
-        var blobs = null, keys = null;
-        req.onsuccess = function() { blobs = req.result; if (keys !== null) done(); };
-        keyReq.onsuccess = function() { keys = keyReq.result; if (blobs !== null) done(); };
-        req.onerror = function() { resolve([]); };
-        function done() {
-          if (!blobs || !blobs.length) { resolve([]); return; }
-          var files = [];
-          blobs.forEach(function(blob, i) {
-            var name = keys[i];
-            if (!name || !blob) return;
-            var ext = name.split('.').pop().toUpperCase();
-            var url = URL.createObjectURL(blob);
-            files.push({ file: blob, name: name, displayName: name, ext: ext, size: blob.size, url: url, fromBlob: true });
-          });
-          resolve(files);
-        }
-      });
-    }).catch(function() { return []; });
   }
 
   function updateHeader() {
@@ -489,11 +497,10 @@ var LV = (function() {
     play(idx, 'user');
   }
 
+  /* \u2500\u2500 Live file map: filename → File object (in-memory only, lost on page unload) \u2500\u2500 */
+  var _liveFileMap = {};  // key: filename, value: File object
+
   /* \u2500\u2500 Pick folder \u2500\u2500 */
-  // KEY INSIGHT: showDirectoryPicker() File objects are NOT structured-cloneable
-  // and cannot be stored in IndexedDB — they die on page unload.
-  // <input webkitdirectory> gives normal File objects that ARE storable as blobs.
-  // So we ALWAYS use webkitdirectory for persistent storage, even on desktop.
   function pickFolder() {
     var inp = document.createElement('input');
     inp.type = 'file';
@@ -503,60 +510,77 @@ var LV = (function() {
     inp.onchange = function() {
       if (!inp.files || !inp.files.length) return;
       showSpinner();
-      var files = Array.from(inp.files)
-        .filter(function(f) { return MEDIA_EXTS.test(f.name); })
-        .map(function(f) {
-          return { file: f, name: f.name, displayName: f.name,
-                   ext: f.name.split('.').pop().toUpperCase(),
-                   size: f.size, url: URL.createObjectURL(f) };
-        });
-      // Derive folder name from first file's path (webkitRelativePath)
-      if (inp.files[0] && inp.files[0].webkitRelativePath) {
-        _rootName = inp.files[0].webkitRelativePath.split('/')[0] || 'Selected Files';
-      } else {
-        _rootName = 'Selected Files';
-      }
+      var allFiles = Array.from(inp.files);
+      var mediaFiles = allFiles.filter(function(f) { return MEDIA_EXTS.test(f.name); });
+
+      // Derive folder name
+      _rootName = (allFiles[0] && allFiles[0].webkitRelativePath)
+        ? allFiles[0].webkitRelativePath.split('/')[0]
+        : 'Selected Files';
       storeRootName(_rootName);
+
+      // Populate live file map (in-memory, lost on close — that's fine)
+      _liveFileMap = {};
+      mediaFiles.forEach(function(f) { _liveFileMap[f.name] = f; });
+
+      var files = mediaFiles.map(function(f) {
+        return { file: f, name: f.name, displayName: f.name,
+                 ext: f.name.split('.').pop().toUpperCase(),
+                 size: f.size, url: URL.createObjectURL(f) };
+      });
+
       updateHeader();
       loadFiles(files);
       hideSpinner();
-      // Save blobs to IndexedDB in background so next cold start needs no permission
-      saveBlobsInBackground(files);
+
+      // Save only metadata — a few KB regardless of how many/large files
+      saveFileMeta(files);
+
+      // Show count confirmation
+      showRefreshToast('\u2713 ' + files.length + '/' + allFiles.length + ' media ready');
     };
     inp.click();
   }
 
-  // Save File blobs to IndexedDB in small chunks to avoid IDB transaction timeouts
-  // on large folders (100+ files). Runs entirely in background after UI is ready.
-  function saveBlobsInBackground(files) {
-    var CHUNK = 10;
-    var i = 0;
-    // Save metadata first (fast)
-    openDB().then(function(db) {
-      var meta = files.map(function(f) { return { name: f.name, ext: f.ext, size: f.size }; });
-      var tx = db.transaction(CONFIG.cacheStore, 'readwrite');
-      tx.objectStore(CONFIG.cacheStore).put(meta, 'files');
-    }).catch(function(){});
+  // Re-open folder picker on restart — called from the "Reload" banner tap
+  // User selects the SAME folder; we match files by name against saved metadata
+  function reloadFolder() {
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.multiple = true;
+    inp.accept = 'video/*,audio/*';
+    inp.setAttribute('webkitdirectory', '');
+    inp.onchange = function() {
+      if (!inp.files || !inp.files.length) return;
+      showSpinner();
+      var allFiles = Array.from(inp.files);
+      var mediaFiles = allFiles.filter(function(f) { return MEDIA_EXTS.test(f.name); });
 
-    // Clear old blobs then write new ones in chunks
-    openDB().then(function(db) {
-      var clearTx = db.transaction(CONFIG.blobStore, 'readwrite');
-      clearTx.objectStore(CONFIG.blobStore).clear();
-      clearTx.oncomplete = function() { writeChunk(db); };
-    }).catch(function(){});
+      _rootName = (allFiles[0] && allFiles[0].webkitRelativePath)
+        ? allFiles[0].webkitRelativePath.split('/')[0]
+        : _rootName || 'Selected Files';
+      storeRootName(_rootName);
 
-    function writeChunk(db) {
-      if (i >= files.length) return; // done
-      var chunk = files.slice(i, i + CHUNK);
-      i += CHUNK;
-      var tx = db.transaction(CONFIG.blobStore, 'readwrite');
-      var store = tx.objectStore(CONFIG.blobStore);
-      chunk.forEach(function(f) {
-        if (f.file) { try { store.put(f.file, f.name); } catch(e) {} }
+      _liveFileMap = {};
+      mediaFiles.forEach(function(f) { _liveFileMap[f.name] = f; });
+
+      var files = mediaFiles.map(function(f) {
+        return { file: f, name: f.name, displayName: f.name,
+                 ext: f.name.split('.').pop().toUpperCase(),
+                 size: f.size, url: URL.createObjectURL(f) };
       });
-      tx.oncomplete = function() { writeChunk(db); };
-      tx.onerror = function() {}; // skip failed chunk silently
-    }
+
+      updateHeader();
+      loadFiles(files);
+      hideSpinner();
+      saveFileMeta(files);
+
+      var banner = document.getElementById('reload-banner');
+      if (banner) banner.remove();
+
+      showRefreshToast('\u2713 ' + files.length + '/' + allFiles.length + ' media ready');
+    };
+    inp.click();
   }
 
   function simpleFilePicker() {
@@ -565,34 +589,25 @@ var LV = (function() {
     inp.multiple = true;
     inp.accept = 'video/*,audio/*';
     inp.onchange = function() {
-      var files = Array.from(inp.files)
-        .filter(function(f) { return MEDIA_EXTS.test(f.name); })
-        .map(function(f) {
-          return { file: f, name: f.name, displayName: f.name, ext: f.name.split('.').pop().toUpperCase(),
-                   size: f.size, url: URL.createObjectURL(f) };
-        });
+      var mediaFiles = Array.from(inp.files).filter(function(f) { return MEDIA_EXTS.test(f.name); });
+      _liveFileMap = {};
+      mediaFiles.forEach(function(f) { _liveFileMap[f.name] = f; });
+      var files = mediaFiles.map(function(f) {
+        return { file: f, name: f.name, displayName: f.name,
+                 ext: f.name.split('.').pop().toUpperCase(),
+                 size: f.size, url: URL.createObjectURL(f) };
+      });
       _rootName = 'Selected Files';
       storeRootName(_rootName);
       updateHeader();
       loadFiles(files);
-      saveBlobsInBackground(files);
+      saveFileMeta(files);
     };
     inp.click();
   }
 
   function refreshFolder() {
-    // With blob-based persistence there is no live directory handle to refresh from.
-    // Reload the blob cache (picks up nothing new, but re-validates memory state),
-    // or prompt the user to re-open the folder if they want to pick up new files.
-    loadBlobCache().then(function(blobFiles) {
-      if (blobFiles && blobFiles.length > 0) {
-        blobFiles.sort(function(a, b) { return a.name.localeCompare(b.name); });
-        loadFiles(blobFiles);
-        showRefreshToast('\u2713 ' + blobFiles.length + ' file' + (blobFiles.length !== 1 ? 's' : '') + ' loaded');
-      } else {
-        showRefreshToast('\u26a0\ufe0f No cached files \u2014 tap Open Folder');
-      }
-    });
+    showReloadBanner();
   }
 
   function showRefreshToast(msg) {
@@ -621,8 +636,7 @@ var LV = (function() {
     _files.forEach(function(f, i) { f.idx = i; });
     sortFiles();
     renderGrid(_filtered);
-    // NOTE: blob saving is done by saveBlobsInBackground (called from pickFolder only)
-    // Do NOT call saveFileCache here — it would try to re-store blobs on every restore
+    // Metadata save handled by saveFileMeta() in pickFolder/reloadFolder only
   }
 
   /* \u2500\u2500 Sort \u2500\u2500 */
@@ -659,10 +673,15 @@ var LV = (function() {
 
   /* \u2500\u2500 Render list \u2500\u2500 */
   function renderGrid(files) {
-    var allAudio = files.length && files.every(function(f) { return isAudio(f.name); });
-    var label = allAudio ? 'song' : 'media';
-    var cached = files.length && files[0] && files[0].cached;
-    countEl.textContent = files.length + ' ' + label + (files.length !== 1 ? 's' : '') + (cached ? ' \u2014 tap to play' : '');
+    var allAudio  = files.length && files.every(function(f) { return isAudio(f.name); });
+    var label     = allAudio ? 'song' : 'media';
+    var total     = _files.length;
+    var shown     = files.length;
+    var searching = shown < total;
+    // Count badge: "70/305 media ready to watch" or "305 media ready to watch"
+    countEl.textContent = searching
+      ? shown + '/' + total + ' ' + label + (shown !== 1 ? 's' : '') + ' shown'
+      : total + ' ' + label + (total !== 1 ? 's' : '') + ' ready to watch';
     if (files.length === 0) {
       grid.innerHTML = _files.length === 0
         ? '<div class="state-msg"><div class="icon">\uD83D\uDCC2</div><h2>No folder open</h2><p>Tap <strong>Open Folder</strong> to load your media.</p></div>'
@@ -695,6 +714,14 @@ var LV = (function() {
   function play(idx, autoPlay) {
     var f = _files[idx];
     if (!f) return;
+
+    // File list shown from metadata but folder not yet reloaded — prompt user
+    if (f.needsReload) {
+      showRefreshToast('\uD83D\uDCC2 Tap the banner below to reload folder first');
+      showReloadBanner(_rootName, _files.length);
+      return;
+    }
+
     _currentIdx = idx;
     saveState();
 
@@ -1491,20 +1518,58 @@ var LV = (function() {
     if (_pullIndicator) _pullIndicator.style.display = 'none';
   });
 
+  /* \u2500\u2500 Reload banner \u2500\u2500 */
+  function showReloadBanner(folderName, count) {
+    var old = document.getElementById('reload-banner');
+    if (old) old.remove();
+
+    var name = folderName || _rootName || 'your folder';
+    var countStr = count ? count + ' media \u2014 ' : '';
+
+    var banner = document.createElement('div');
+    banner.id = 'reload-banner';
+    banner.style.cssText = [
+      'position:fixed;bottom:32px;left:50%;transform:translateX(-50%)',
+      'z-index:99999;background:var(--lv-hl)',
+      'color:#fff;font-weight:700;font-size:15px',
+      'padding:14px 24px;border-radius:28px;cursor:pointer',
+      'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
+      'white-space:nowrap;text-align:center',
+      'touch-action:manipulation;-webkit-tap-highlight-color:transparent',
+      'max-width:92vw;overflow:hidden;text-overflow:ellipsis',
+      'display:flex;align-items:center;gap:10px'
+    ].join(';');
+    banner.innerHTML =
+      '<span>\uD83D\uDCC2</span>' +
+      '<span>' + countStr + 'Tap to reload <strong>' + esc(name) + '</strong></span>';
+
+    banner.addEventListener('click', function() {
+      banner.innerHTML = '<span>\u23F3</span><span>Select the same folder\u2026</span>';
+      reloadFolder();
+    });
+
+    document.body.appendChild(banner);
+  }
+
   /* \u2500\u2500 Restore previous session \u2500\u2500 */
   (function initRestore() {
     _rootName = loadRootName();
     updateHeader();
 
-    // Restore directly from stored File blobs — zero permission, zero dialog.
-    // Works after cold restart, phone reboot, memory pressure.
-    loadBlobCache().then(function(blobFiles) {
-      if (blobFiles && blobFiles.length > 0) {
-        blobFiles.sort(function(a, b) { return a.name.localeCompare(b.name); });
-        loadFiles(blobFiles);
-        showRefreshToast('\u2713 ' + blobFiles.length + ' file' + (blobFiles.length !== 1 ? 's' : '') + ' restored');
-      }
-      // No blobs yet = first launch, user will tap Open Folder
+    loadFileMeta().then(function(meta) {
+      if (!meta || !meta.length) return; // first launch
+
+      // Show full list instantly from metadata — names + sizes, no playback yet
+      _files = meta.map(function(m, i) {
+        return { idx: i, name: m.name, displayName: m.name,
+                 ext: m.ext, size: m.size,
+                 url: null, needsReload: true };
+      });
+      sortFiles();
+      renderGrid(_filtered);
+
+      // Show reload banner — one tap, no browsing, just confirm same folder
+      showReloadBanner(_rootName, meta.length);
     });
   })();
 
@@ -1516,8 +1581,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index11',
-      short_name: 'index11',
+      name: 'index12',
+      short_name: 'index12',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
@@ -1584,7 +1649,8 @@ var LV = (function() {
   });
 
   /* \u2500\u2500 Public API \u2500\u2500 */
-  return { pickFolder: pickFolder, search: search, toggleSort: toggleSort, close: close,
+  return { pickFolder: pickFolder, reloadFolder: reloadFolder, search: search,
+           toggleSort: toggleSort, close: close,
            toggleShuffle: toggleShuffle, toggleSBSkip: toggleSBSkip,
            playNext: playNext, prevTrack: prevTrack, playAll: playAll, installPWA: installPWA };
 
