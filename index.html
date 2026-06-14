@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index13</title>
+<title>index14</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -142,21 +142,22 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   height: 100vh !important;
 }
 .player-topbar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; background: rgba(0,0,0,.85);
-  position: absolute; top: 0; left: 0; right: 0; z-index: 10020;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: rgba(0,0,0,.75);
+  position: absolute; top: 0; right: 0; z-index: 10020;
   padding-top: max(8px, env(safe-area-inset-top, 8px));
-  padding-left: max(12px, env(safe-area-inset-left, 12px));
   padding-right: max(12px, env(safe-area-inset-right, 12px));
+  border-bottom-left-radius: 12px;
 }
+
+.player-ttl { display: none; } /* title hidden while playing */
 .btn-close {
-  padding: 10px 16px; background: var(--danger); color: #fff;
-  border: none; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer;
-  white-space: nowrap; min-height: 44px; touch-action: manipulation;
-}
-.player-ttl {
-  flex: 1; font-size: 14px; font-weight: 700; color: #fff;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(255,255,255,0.12); border: none; color: #fff;
+  font-size: 20px; font-weight: 700; line-height: 1;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent; flex-shrink: 0;
 }
 .btn-nav {
   padding: 10px 12px; background: var(--surface2); color: #fff;
@@ -250,8 +251,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <!-- Player Overlay -->
 <div id="player-overlay">
   <div class="player-topbar">
-    <button class="btn-close" onclick="LV.close()">&#10005; Close</button>
-    <span class="player-ttl" id="lv-player-title">Loading&#8230;</span>
+    <button class="btn-close" onclick="LV.close()" title="Close">&#10005;</button>
     <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">&#9198;</button>
     <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">&#9197;</button>
   </div>
@@ -297,7 +297,7 @@ var LV = (function() {
   var grid      = document.getElementById('lv-grid');
   var overlay   = document.getElementById('player-overlay');
   var videoEl   = document.getElementById('local-video');
-  var titleEl   = document.getElementById('lv-player-title');
+  var titleEl   = document.getElementById('lv-player-title') || { textContent: '' };
   var countEl   = document.getElementById('lv-count');
   var shuffleBtn = document.getElementById('lv-shuffle-btn');
   var sortBtn   = document.getElementById('lv-sort-btn');
@@ -562,15 +562,21 @@ var LV = (function() {
       if (_currentIdx !== null) localStorage.setItem('lv_idx', _currentIdx);
       if (videoEl.duration && isFinite(videoEl.duration))
         localStorage.setItem('lv_time', videoEl.currentTime);
+      localStorage.setItem('lv_autoplay', _autoPlayMode ? '1' : '0');
     } catch(e) {}
   }
 
   function loadState() {
     try {
-      var idx = localStorage.getItem('lv_idx');
-      var time = localStorage.getItem('lv_time');
-      return { idx: idx !== null ? parseInt(idx, 10) : null, time: time !== null ? parseFloat(time) : 0 };
-    } catch(e) { return { idx: null, time: 0 }; }
+      var idx      = localStorage.getItem('lv_idx');
+      var time     = localStorage.getItem('lv_time');
+      var autoplay = localStorage.getItem('lv_autoplay');
+      return {
+        idx:      idx      !== null ? parseInt(idx, 10)    : null,
+        time:     time     !== null ? parseFloat(time)     : 0,
+        autoplay: autoplay === '1'
+      };
+    } catch(e) { return { idx: null, time: 0, autoplay: false }; }
   }
 
   /* \u2500\u2500 Shuffle \u2500\u2500 */
@@ -1700,42 +1706,111 @@ var LV = (function() {
     updateHeader();
 
     loadFileMeta().then(function(meta) {
-      if (!meta || !meta.length) return; // first launch
+      if (!meta || !meta.length) return; // first launch — wait for Open Folder
 
-      // Build full file list from metadata (names + sizes only — no playback yet)
-      _files = meta.map(function(m, i) {
-        return { idx: i, name: m.name, displayName: m.name,
-                 ext: m.ext, size: m.size,
-                 url: null, needsReload: true };
-      });
-
-      // Hydrate any files that have cached blobs → give them live URLs immediately
+      // Hydrate blob cache → only cached files become immediately playable
       hydrateFromBlobCache(meta).then(function(urlMap) {
-        var hydratedCount = 0;
-        _files.forEach(function(f) {
-          if (urlMap[f.name]) {
-            f.url        = urlMap[f.name];
-            f.needsReload = false;
-            f.fromBlob   = true;
-            hydratedCount++;
+        var cachedFiles = [];
+        meta.forEach(function(m, i) {
+          if (urlMap[m.name]) {
+            cachedFiles.push({
+              idx: i, name: m.name, displayName: m.name,
+              ext: m.ext, size: m.size,
+              url: urlMap[m.name], fromBlob: true, needsReload: false
+            });
           }
         });
 
+        if (!cachedFiles.length) {
+          // No blobs cached yet — show reload banner only
+          _files = meta.map(function(m, i) {
+            return { idx: i, name: m.name, displayName: m.name,
+                     ext: m.ext, size: m.size, url: null, needsReload: true };
+          });
+          sortFiles();
+          renderGrid(_filtered);
+          showReloadBanner(_rootName, meta.length);
+          return;
+        }
+
+        // Show ONLY the cached files — user sees a clean "ready to play" list
+        _files = cachedFiles;
+        _files.forEach(function(f, i) { f.idx = i; }); // re-index for this session
         sortFiles();
         renderGrid(_filtered);
 
-        var total = meta.length;
-        if (hydratedCount > 0) {
-          // Some files playable immediately, rest need folder reload
-          showRefreshToast('\u25B6 ' + hydratedCount + ' ready \u2014 ' + (total - hydratedCount) + ' need reload');
-        }
+        var state   = loadState();
+        var total   = meta.length;
+        var nCached = cachedFiles.length;
 
-        // Always show reload banner — needed for non-cached files
-        // Banner dismisses itself once folder is reloaded
-        showReloadBanner(_rootName, total);
+        // Show cached-session UI banner at top of list
+        showCacheSessionBanner(nCached, total, state);
+
+        // If last session was Play All mode → auto-resume playing from first cached file
+        if (state.autoplay) {
+          setTimeout(function() {
+            _autoPlayMode = true;
+            play(0, true); // start from first cached file
+          }, 600);
+        }
       });
     });
   })();
+
+  /* \u2500\u2500 Cache session banner (shown on cold restart) \u2500\u2500 */
+  function showCacheSessionBanner(nCached, total, state) {
+    var old = document.getElementById('cache-session-banner');
+    if (old) old.remove();
+
+    var bar = document.createElement('div');
+    bar.id  = 'cache-session-banner';
+    bar.style.cssText = [
+      'position:sticky;top:0;z-index:500',
+      'background:rgba(15,15,15,0.97)',
+      'border-bottom:1px solid var(--border)',
+      'padding:10px 14px',
+      'display:flex;align-items:center;gap:10px;flex-wrap:wrap'
+    ].join(';');
+
+    var info = document.createElement('span');
+    info.style.cssText = 'flex:1;font-size:12px;color:var(--muted);white-space:nowrap;';
+    info.textContent   = '\u25B6 ' + nCached + ' cached \u2022 ' + total + ' total';
+
+    var playAllBtn = document.createElement('button');
+    playAllBtn.textContent = '\u25B6 Play All ' + nCached;
+    playAllBtn.style.cssText = [
+      'background:var(--lv-hl);color:#fff;border:none',
+      'border-radius:20px;padding:7px 16px',
+      'font-size:13px;font-weight:700;cursor:pointer',
+      'touch-action:manipulation;white-space:nowrap'
+    ].join(';');
+    playAllBtn.addEventListener('click', function() {
+      bar.remove();
+      _autoPlayMode = true;
+      play(0, true);
+    });
+
+    var reloadBtn = document.createElement('button');
+    reloadBtn.textContent = '\uD83D\uDCC2 Load all ' + total;
+    reloadBtn.style.cssText = [
+      'background:var(--surface2);color:#fff;border:none',
+      'border-radius:20px;padding:7px 16px',
+      'font-size:13px;font-weight:700;cursor:pointer',
+      'touch-action:manipulation;white-space:nowrap'
+    ].join(';');
+    reloadBtn.addEventListener('click', function() {
+      bar.remove();
+      reloadFolder();
+    });
+
+    bar.appendChild(info);
+    bar.appendChild(playAllBtn);
+    bar.appendChild(reloadBtn);
+
+    // Insert at top of grid
+    var grid = document.getElementById('lv-grid');
+    if (grid) grid.insertBefore(bar, grid.firstChild);
+  }
 
   /* \u2500\u2500 PWA: Manifest + Install + Service Worker \u2500\u2500 */
   var _pwaDeferredPrompt = null;
@@ -1745,8 +1820,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index13',
-      short_name: 'index13',
+      name: 'index14',
+      short_name: 'index14',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
