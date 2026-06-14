@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index18</title>
+<title>index19</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1406,6 +1406,19 @@ var LV = (function() {
     filler:         'Filler'
   };
 
+  /* ── Fetch with hard timeout so SB never hangs indefinitely ── */
+  function fetchWithTimeout(url, opts, ms) {
+    ms = ms || 8000;
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() { reject(new Error('timeout')); }, ms);
+      fetch(url, opts || {}).then(function(r) {
+        clearTimeout(timer); resolve(r);
+      }).catch(function(e) {
+        clearTimeout(timer); reject(e);
+      });
+    });
+  }
+
   var SB_API        = 'https://sponsor.ajay.app/api/skipSegments';
   var SB_API_MIRROR = 'https://sponsorblock.kavin.rocks/api/skipSegments';
 
@@ -1467,7 +1480,7 @@ var LV = (function() {
     var apiUrl = INV_INSTANCES[instanceIdx] +
       '/api/v1/search?q=' + encodeURIComponent(query) +
       '&type=video&fields=videoId,title&hl=en&gl=IN';
-    return fetch(proxied(apiUrl))
+    return fetchWithTimeout(proxied(apiUrl), {}, 8000)
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
@@ -1489,7 +1502,7 @@ var LV = (function() {
   // Search via a public YouTube search URL scraped through proxy
   function searchYouTubeScrape(query) {
     var ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
-    return fetch(proxied(ytUrl))
+    return fetchWithTimeout(proxied(ytUrl), {}, 8000)
       .then(function(r) { if (!r.ok) throw new Error('yt fail'); return r.text(); })
       .then(function(html) {
         var ids = [];
@@ -1503,7 +1516,7 @@ var LV = (function() {
         if (!ids.length) throw new Error('No YT IDs scraped');
         // Fetch titles via oEmbed for top 3 IDs to pick best match
         return Promise.all(ids.slice(0, 3).map(function(id) {
-          return fetch(proxied('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + id + '&format=json'))
+          return fetchWithTimeout(proxied('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + id + '&format=json'), {}, 5000)
             .then(function(r) { return r.ok ? r.json() : { title: '' }; })
             .then(function(d) { return { videoId: id, title: d.title || '' }; })
             .catch(function() { return { videoId: id, title: '' }; });
@@ -1514,7 +1527,7 @@ var LV = (function() {
   /* ── Invidious HTML scrape fallback ── */
   function searchInvidiousScrape(query) {
     var url = 'https://inv.nadeko.net/search?q=' + encodeURIComponent(query) + '&type=video';
-    return fetch(proxied(url))
+    return fetchWithTimeout(proxied(url), {}, 8000)
       .then(function(r) { if (!r.ok) throw new Error('scrape fail'); return r.text(); })
       .then(function(html) {
         var ids = [];
@@ -1582,18 +1595,24 @@ var LV = (function() {
     var catParams = SB_CATS.map(function(c) { return 'category=' + c; }).join('&');
     var path = '?videoID=' + encodeURIComponent(videoId) + '&' + catParams + '&actionType=skip';
     function tryFetch(url) {
-      return fetch(url + path)
+      return fetchWithTimeout(url + path, {}, 6000)
         .then(function(r) {
           if (r.status === 404) return [];
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         });
     }
-    // Try direct first (works if network allows), then proxied, then mirror
+    function tryFetchProxied(url) {
+      return fetchWithTimeout(proxied(url + path), {}, 6000)
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json().then(function(d) {
+            return Array.isArray(d) ? d : (d && d.contents ? JSON.parse(d.contents) : []);
+          });
+        });
+    }
     return tryFetch(SB_API)
-      .catch(function() { return tryFetch(proxied(SB_API + path)).then(function(d) {
-          return Array.isArray(d) ? d : (d && d.contents ? JSON.parse(d.contents) : []);
-        }); })
+      .catch(function() { return tryFetchProxied(SB_API); })
       .catch(function() { return tryFetch(SB_API_MIRROR); })
       .catch(function(e) { return { error: e.message }; });
   }
@@ -1683,6 +1702,8 @@ var LV = (function() {
   }
 
   /* ── onVideoOpen ── */
+  // SponsorBlock is ENTIRELY cosmetic — video already plays before this runs.
+  // Hard 15s timeout guarantees the bar always clears, no matter what fails.
   function onVideoOpen(f, onReady) {
     _sbSegments    = [];
     _sbSkipped     = 0;
@@ -1691,7 +1712,23 @@ var LV = (function() {
     renderSBSegments(0);
     sbBar.className = '';
 
-    // Show searching status immediately
+    // Hard timeout: if SB hasn't resolved in 15s, clear bar and move on
+    var sbDone = false;
+    var sbTimeout = setTimeout(function() {
+      if (!sbDone) {
+        sbDone = true;
+        sbBar.className = '';
+        if (onReady) onReady();
+      }
+    }, 15000);
+
+    function finishSB() {
+      if (sbDone) return;
+      sbDone = true;
+      clearTimeout(sbTimeout);
+      if (onReady) onReady();
+    }
+
     sbBar.innerHTML = '\u26A1 SB: searching\u2026';
     sbBar.className = 'visible';
 
@@ -1702,32 +1739,30 @@ var LV = (function() {
         var src = result.source === 'filename' ? 'from filename'
                 : result.source === 'cache'    ? 'cached'
                 : (result.confidence >= 60 ? 'found' : 'low confidence \u26A0\uFE0F');
-        sbBar.innerHTML = '\u26A1 SB: ' + esc(result.title || result.id).slice(0, 40) +
+        sbBar.innerHTML = '\u26A1 SB: ' + esc((result.title || result.id)).slice(0, 40) +
                           ' <small style="color:#999">(' + src + ')</small>';
 
         return fetchSBSegments(result.id).then(function(sbResult) {
           if (sbResult && sbResult.error) {
-            sbBar.innerHTML = '\u26A1 SB: network error \u2014 ' + sbResult.error;
-            setTimeout(function() { sbBar.className = ''; }, 4000);
-            if (onReady) onReady();
-            return;
+            sbBar.innerHTML = '\u26A1 SB: ' + sbResult.error;
+            setTimeout(function() { sbBar.className = ''; }, 3000);
+            finishSB(); return;
           }
           _sbSegments = Array.isArray(sbResult) ? sbResult : [];
           if (!_sbSegments.length) {
-            sbBar.innerHTML = '\u26A1 SB: no segments for ' + esc(result.title || result.id).slice(0, 30);
-            setTimeout(function() { sbBar.className = ''; }, 3000);
-            if (onReady) onReady();
-            return;
+            sbBar.innerHTML = '\u26A1 SB: no segments';
+            setTimeout(function() { sbBar.className = ''; }, 2500);
+            finishSB(); return;
           }
           if (videoEl.duration && isFinite(videoEl.duration)) renderSBSegments(videoEl.duration);
           updateSBBar();
-          if (onReady) onReady();
+          finishSB();
         });
       })
       .catch(function(e) {
-        sbBar.innerHTML = '\u26A1 SB: could not find song (' + (e.message || 'error') + ')';
-        setTimeout(function() { sbBar.className = ''; }, 4000);
-        if (onReady) onReady();
+        sbBar.innerHTML = '\u26A1 SB: ' + (e.message === 'timeout' ? 'timed out' : 'unavailable');
+        setTimeout(function() { sbBar.className = ''; }, 3000);
+        finishSB();
       });
   }
 
@@ -1989,8 +2024,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index18',
-      short_name: 'index18',
+      name: 'index19',
+      short_name: 'index19',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
