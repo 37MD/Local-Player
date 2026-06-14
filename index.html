@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index16</title>
+<title>index18</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,6 +52,17 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 }
 .btn:active { opacity: .7; }
 .btn-pick   { background: var(--lv-hl); color: #fff; }
+.btn-pick .pick-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
 .btn-sort   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
 .btn-on     { background: var(--accent2); color: #fff; border: 1px solid var(--accent); }
 
@@ -141,37 +152,52 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   width: 100vw !important;
   height: 100vh !important;
 }
+/* ── Player floating controls (top-right, hidden until tap) ── */
 .player-topbar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; background: rgba(0,0,0,.75);
   position: absolute; top: 0; right: 0; z-index: 10020;
-  padding-top: max(8px, env(safe-area-inset-top, 8px));
-  padding-right: max(12px, env(safe-area-inset-right, 12px));
-  border-bottom-left-radius: 12px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+  padding: 10px 8px;
+  background: rgba(0,0,0,0.55);
+  border-bottom-left-radius: 14px;
+  /* Hidden by default — shown on tap */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s ease;
 }
-
-.player-ttl { display: none; } /* title hidden while playing */
-.btn-close {
-  background: rgba(255,255,255,0.12); border: none; color: #fff;
-  font-size: 20px; font-weight: 700; line-height: 1;
-  width: 40px; height: 40px; border-radius: 50%;
+.player-topbar.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.player-ttl { display: none; }
+/* All 4 player buttons share same style */
+.btn-close, .btn-nav, .btn-fs {
+  background: rgba(255,255,255,0.13); border: none; color: #fff;
+  font-size: 18px; font-weight: 700; line-height: 1;
+  width: 44px; height: 44px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; touch-action: manipulation;
   -webkit-tap-highlight-color: transparent; flex-shrink: 0;
+  transition: background .15s;
 }
-.btn-nav {
-  padding: 10px 12px; background: var(--surface2); color: #fff;
-  border: none; border-radius: 6px; font-size: 18px; cursor: pointer;
-  min-height: 44px; min-width: 44px; touch-action: manipulation;
-  display: flex; align-items: center; justify-content: center;
+.btn-close:active, .btn-nav:active, .btn-fs:active {
+  background: rgba(255,255,255,0.30);
 }
+/* YouTube-style fullscreen SVG icon */
+.btn-fs svg { width: 20px; height: 20px; fill: #fff; }
 #local-video {
-  /* No fixed aspect-ratio &#8212; fill flex space naturally in portrait and landscape */
   width: 100%; flex: 1; min-height: 0; object-fit: contain; background: #000;
+  position: relative; z-index: 1;
 }
-/* In native fullscreen the video IS the fullscreen element &#8212; fill everything */
-#local-video:-webkit-full-screen { width: 100vw; height: 100vh; object-fit: contain; }
-#local-video:fullscreen          { width: 100vw; height: 100vh; object-fit: contain; }
+/* Tap zone covers the video area to catch taps for showing controls */
+#player-tap-zone {
+  position: absolute; inset: 0; z-index: 10010;
+  background: transparent;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+/* True fullscreen: video fills entire screen, all UI hidden */
+#local-video:-webkit-full-screen { width: 100vw; height: 100vh; object-fit: contain; background: #000; }
+#local-video:fullscreen          { width: 100vw; height: 100vh; object-fit: contain; background: #000; }
 
 /* &#9472;&#9472; SponsorBlock timeline &#9472;&#9472; */
 #sb-timeline-wrap {
@@ -249,10 +275,21 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 <!-- Player Overlay -->
 <div id="player-overlay">
-  <div class="player-topbar">
-    <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">&#9198;</button>
-    <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">&#9197;</button>
+  <!-- Tap catcher: tap anywhere on video area to show/hide controls -->
+  <div id="player-tap-zone"></div>
+  <div class="player-topbar" id="player-controls">
+    <!-- 1. Close -->
     <button class="btn-close" onclick="LV.close()" title="Close">&#10005;</button>
+    <!-- 2. Prev -->
+    <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">&#9198;</button>
+    <!-- 3. Next -->
+    <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">&#9197;</button>
+    <!-- 4. Fullscreen (YouTube-style expand icon) -->
+    <button class="btn-fs" onclick="LV.toggleFullscreen()" id="lv-fs-btn" title="Fullscreen">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+      </svg>
+    </button>
   </div>
   <video id="local-video" playsinline preload="metadata"></video>
   <div id="sb-timeline-wrap"><div class="sb-progress" id="sb-progress"></div></div>
@@ -294,24 +331,120 @@ var LV = (function() {
 
   /* \u2500\u2500 DOM refs \u2500\u2500 */
   var grid      = document.getElementById('lv-grid');
-  var overlay   = document.getElementById('player-overlay');
-  var videoEl   = document.getElementById('local-video');
-  var titleEl   = document.getElementById('lv-player-title') || { textContent: '' };
-  var countEl   = document.getElementById('lv-count');
-  var shuffleBtn = document.getElementById('lv-shuffle-btn');
-  var sortBtn   = document.getElementById('lv-sort-btn');
-  var sbBar     = document.getElementById('sb-bar');
-  var sbTimeline = document.getElementById('sb-timeline-wrap');
-  var sbProgress = document.getElementById('sb-progress');
-  var scanSpinner = document.getElementById('scan-spinner');
+  var overlay       = document.getElementById('player-overlay');
+  var videoEl       = document.getElementById('local-video');
+  var titleEl       = document.getElementById('lv-player-title') || { textContent: '' };
+  var countEl       = document.getElementById('lv-count');
+  var shuffleBtn    = document.getElementById('lv-shuffle-btn');
+  var sortBtn       = document.getElementById('lv-sort-btn');
+  var sbBar         = document.getElementById('sb-bar');
+  var sbTimeline    = document.getElementById('sb-timeline-wrap');
+  var sbProgress    = document.getElementById('sb-progress');
+  var scanSpinner   = document.getElementById('scan-spinner');
+  var playerControls = document.getElementById('player-controls');
+  var playerTapZone  = document.getElementById('player-tap-zone');
 
-  /* ── Scan spinner ── */
-  function showSpinner() {
-    scanSpinner.className = 'active';
+  /* ── Controls show/hide on tap ── */
+  var _controlsTimer = null;
+  var _controlsVisible = false;
+
+  function showControls() {
+    _controlsVisible = true;
+    playerControls.classList.add('visible');
+    // Tap zone stays on top but let button taps through
+    clearTimeout(_controlsTimer);
+    _controlsTimer = setTimeout(hideControls, 3000);
   }
+
+  function hideControls() {
+    _controlsVisible = false;
+    playerControls.classList.remove('visible');
+    clearTimeout(_controlsTimer);
+  }
+
+  // Tap zone: tap toggles controls visibility
+  playerTapZone.addEventListener('click', function(e) {
+    if (_controlsVisible) {
+      hideControls();
+    } else {
+      showControls();
+    }
+  });
+
+  // Tapping a control button resets the auto-hide timer
+  playerControls.addEventListener('click', function() {
+    clearTimeout(_controlsTimer);
+    _controlsTimer = setTimeout(hideControls, 3000);
+  });
+
+  /* ── True fullscreen: video element only (all UI disappears) ── */
+  function toggleFullscreen() {
+    var fsBtnIcon = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
+    var exitIcon  = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>';
+    var fsBtn = document.getElementById('lv-fs-btn');
+
+    var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (isFs) {
+      // Exit fullscreen
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      if (fsBtn) fsBtn.innerHTML = fsBtnIcon;
+    } else {
+      // Enter fullscreen on VIDEO element — pure video, no UI
+      var fsPromise = null;
+      if (videoEl.requestFullscreen) fsPromise = videoEl.requestFullscreen();
+      else if (videoEl.webkitRequestFullscreen) { videoEl.webkitRequestFullscreen(); fsPromise = Promise.resolve(); }
+      if (fsPromise) {
+        fsPromise.then(function() {
+          if (fsBtn) fsBtn.innerHTML = exitIcon;
+          // Attempt landscape lock inside video fullscreen
+          if (screen.orientation && screen.orientation.lock) {
+            screen.orientation.lock('landscape').catch(function(){});
+          }
+        }).catch(function() {
+          // If video fullscreen denied (MIUI hijack), fall back to overlay fullscreen
+          if (overlay.requestFullscreen) overlay.requestFullscreen();
+          else if (overlay.webkitRequestFullscreen) overlay.webkitRequestFullscreen();
+        });
+      }
+    }
+
+    // Reset auto-hide timer after fullscreen toggle
+    clearTimeout(_controlsTimer);
+    _controlsTimer = setTimeout(hideControls, 3000);
+  }
+
+  // Sync exit-fullscreen icon when user presses Escape or swipes out
+  document.addEventListener('fullscreenchange', function() {
+    var fsBtn = document.getElementById('lv-fs-btn');
+    if (!fsBtn) return;
+    var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    var fsBtnIcon = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
+    var exitIcon  = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>';
+    fsBtn.innerHTML = isFs ? exitIcon : fsBtnIcon;
+  });
+  document.addEventListener('webkitfullscreenchange', function() {
+    document.dispatchEvent(new Event('fullscreenchange'));
+  });
+  var pickBtn     = document.querySelector('.btn-pick');
+
+  /* ── Scan spinner (header) ── */
+  function showSpinner() { scanSpinner.className = 'active'; }
   function hideSpinner() {
     scanSpinner.className = 'done';
     setTimeout(function() { scanSpinner.className = ''; }, 2500);
+  }
+
+  /* ── Open Folder button spinner ── */
+  function showPickSpinner() {
+    if (!pickBtn) return;
+    pickBtn.disabled = true;
+    pickBtn.innerHTML = '<span class="pick-spinner"></span> Loading\u2026';
+  }
+  function hidePickSpinner() {
+    if (!pickBtn) return;
+    pickBtn.disabled = false;
+    pickBtn.innerHTML = '&#128194; Open Folder';
   }
 
   /* \u2500\u2500 Pull to refresh \u2500\u2500 */
@@ -649,8 +782,24 @@ var LV = (function() {
     inp.multiple = true;
     inp.accept = 'video/*,audio/*';
     inp.setAttribute('webkitdirectory', '');
+
+    // Spinner starts immediately on button tap
+    showPickSpinner();
+
+    // If user cancels the picker (closes without choosing), restore button
+    // Chrome fires a 'focus' event on window when the picker dismisses
+    var cancelGuard = setTimeout(function() {
+      window.addEventListener('focus', function onFocus() {
+        window.removeEventListener('focus', onFocus);
+        // Small delay — onchange fires before focus on selection, so only cancel fires here
+        setTimeout(function() { if (!inp._chosen) hidePickSpinner(); }, 300);
+      });
+    }, 500);
+
     inp.onchange = function() {
-      if (!inp.files || !inp.files.length) return;
+      inp._chosen = true;
+      clearTimeout(cancelGuard);
+      if (!inp.files || !inp.files.length) { hidePickSpinner(); return; }
       showSpinner();
       var allFiles = Array.from(inp.files);
       var mediaFiles = allFiles.filter(function(f) { return MEDIA_EXTS.test(f.name); });
@@ -674,6 +823,7 @@ var LV = (function() {
       updateHeader();
       loadFiles(files);
       hideSpinner();
+      hidePickSpinner();
 
       // Save only metadata — a few KB regardless of how many/large files
       saveFileMeta(files);
@@ -888,6 +1038,7 @@ var LV = (function() {
 
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
+    showControls(); // briefly show controls on each new video, then auto-hide
 
     // Autoplay strategy:
     // - Video 1 (user gesture): unmute immediately \u2014 gesture chain is intact.
@@ -1218,15 +1369,10 @@ var LV = (function() {
     videoEl.src = '';
     overlay.classList.remove('active');
     document.body.style.overflow = '';
-
-    // Teardown gesture controls
+    hideControls();
     teardownGestureControls();
-
-    // Exit fullscreen and unlock orientation (handles both native and CSS fallback)
     exitFullscreenAndUnlock();
-
     _autoPlayMode = false;
-
     onVideoClose();
   }
 
@@ -1843,8 +1989,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index16',
-      short_name: 'index16',
+      name: 'index18',
+      short_name: 'index18',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
@@ -1920,7 +2066,8 @@ var LV = (function() {
   return { pickFolder: pickFolder, reloadFolder: reloadFolder, search: search,
            toggleSort: toggleSort, close: close,
            toggleShuffle: toggleShuffle, toggleSBSkip: toggleSBSkip,
-           playNext: playNext, prevTrack: prevTrack, playAll: playAll, installPWA: installPWA };
+           playNext: playNext, prevTrack: prevTrack, playAll: playAll,
+           installPWA: installPWA, toggleFullscreen: toggleFullscreen };
 
 })();
 </script>
