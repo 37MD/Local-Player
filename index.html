@@ -10,7 +10,7 @@
 <link rel="manifest" id="manifest-link">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M12 9l14 7-14 7V9z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E">
-<title>index14</title>
+<title>index16</title>
 <style>
 /* &#9472;&#9472; Reset & Base &#9472;&#9472; */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -46,9 +46,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   flex-wrap: wrap;
 }
 .btn {
-  padding: 10px 18px; border: none; border-radius: var(--radius);
-  font-size: 14px; font-weight: 700; cursor: pointer; letter-spacing: .04em;
-  transition: opacity .15s; min-height: 44px; touch-action: manipulation;
+  padding: 8px 12px; border: none; border-radius: var(--radius);
+  font-size: 13px; font-weight: 700; cursor: pointer; letter-spacing: .02em;
+  transition: opacity .15s; min-height: 40px; touch-action: manipulation;
 }
 .btn:active { opacity: .7; }
 .btn-pick   { background: var(--lv-hl); color: #fff; }
@@ -235,8 +235,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <div class="controls">
   <button class="btn btn-pick" onclick="LV.pickFolder()">&#128194; Open Folder</button>
   <button class="btn btn-sort" onclick="LV.playAll()" id="lv-playall-btn">&#9654; Play All</button>
-  <button class="btn btn-sort" onclick="LV.toggleShuffle()" id="lv-shuffle-btn">&#128256; Off</button>
-  <button class="btn btn-sort" onclick="LV.toggleSort()" id="lv-sort-btn">&#8693; Name</button>
+  <button class="btn btn-sort" onclick="LV.toggleShuffle()" id="lv-shuffle-btn">&#128256; Random</button>
   <span class="count-badge" id="lv-count"></span>
 </div>
 
@@ -251,9 +250,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <!-- Player Overlay -->
 <div id="player-overlay">
   <div class="player-topbar">
-    <button class="btn-close" onclick="LV.close()" title="Close">&#10005;</button>
     <button class="btn-nav" onclick="LV.prevTrack()" id="lv-prev-btn">&#9198;</button>
     <button class="btn-nav" onclick="LV.playNext()" id="lv-next-btn">&#9197;</button>
+    <button class="btn-close" onclick="LV.close()" title="Close">&#10005;</button>
   </div>
   <video id="local-video" playsinline preload="metadata"></video>
   <div id="sb-timeline-wrap"><div class="sb-progress" id="sb-progress"></div></div>
@@ -583,7 +582,7 @@ var LV = (function() {
   function toggleShuffle() {
     _shuffleMode = !_shuffleMode;
     _playedIndices = [];
-    shuffleBtn.textContent = _shuffleMode ? '\uD83D\uDD00 On' : '\uD83D\uDD00 Off';
+    shuffleBtn.textContent = _shuffleMode ? '\uD83D\uDD00 Random ON' : '\uD83D\uDD00 Random';
     shuffleBtn.className = 'btn ' + (_shuffleMode ? 'btn-on' : 'btn-sort');
   }
 
@@ -604,7 +603,7 @@ var LV = (function() {
     _shuffleMode = false;
     _playedIndices = [];
     _autoPlayMode = true;
-    shuffleBtn.textContent = '\uD83D\uDD00 Off';
+    shuffleBtn.textContent = '\uD83D\uDD00 Random';
     shuffleBtn.className = 'btn btn-sort';
     play(idx, true);
   }
@@ -1233,9 +1232,8 @@ var LV = (function() {
 
   /* \u2500\u2500 SponsorBlock \u2500\u2500 */
   var _sbSegments    = [];
-  var _sbAutoSkip    = true;   // user-toggleable
+  var _sbAutoSkip    = true;
   var _sbSkipped     = 0;
-  var _sbToastTimer  = null;
 
   // All categories SponsorBlock supports
   var SB_CATS = ['sponsor','selfpromo','interaction','intro','outro','preview','music_offtopic','filler'];
@@ -1265,23 +1263,25 @@ var LV = (function() {
   var SB_API        = 'https://sponsor.ajay.app/api/skipSegments';
   var SB_API_MIRROR = 'https://sponsorblock.kavin.rocks/api/skipSegments';
 
-  // Invidious public instances to try in order (rotate on failure)
+  // CORS proxy — wraps any URL so Android Chrome (null-origin) can reach it
+  var CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+  function proxied(url) { return CORS_PROXY + encodeURIComponent(url); }
+
+  // Invidious instances — accessed via CORS proxy so null-origin is never rejected
   var INV_INSTANCES = [
     'https://invidious.io.lol',
     'https://inv.nadeko.net',
-    'https://invidious.privacyredirect.com',
-    'https://invidious.nerdvpn.de'
+    'https://invidious.nerdvpn.de',
+    'https://invidious.privacyredirect.com'
   ];
 
   /* ── Video ID cache in IndexedDB ── */
-  var VID_CACHE_STORE = 'vidIdCache'; // key: cleaned song name, value: {id, title, ts}
+  var VID_CACHE_STORE = 'vidIdCache';
 
   function openVidCacheDB() {
     return new Promise(function(resolve, reject) {
       var req = indexedDB.open('LVVidCache', 1);
-      req.onupgradeneeded = function() {
-        req.result.createObjectStore(VID_CACHE_STORE);
-      };
+      req.onupgradeneeded = function() { req.result.createObjectStore(VID_CACHE_STORE); };
       req.onsuccess = function() { resolve(req.result); };
       req.onerror   = function() { reject(req.error); };
     });
@@ -1290,8 +1290,7 @@ var LV = (function() {
   function getCachedVidId(key) {
     return openVidCacheDB().then(function(db) {
       return new Promise(function(resolve) {
-        var req = db.transaction(VID_CACHE_STORE, 'readonly')
-                    .objectStore(VID_CACHE_STORE).get(key);
+        var req = db.transaction(VID_CACHE_STORE, 'readonly').objectStore(VID_CACHE_STORE).get(key);
         req.onsuccess = function() { resolve(req.result || null); };
         req.onerror   = function() { resolve(null); };
       });
@@ -1300,52 +1299,78 @@ var LV = (function() {
 
   function setCachedVidId(key, value) {
     openVidCacheDB().then(function(db) {
-      var tx = db.transaction(VID_CACHE_STORE, 'readwrite');
-      tx.objectStore(VID_CACHE_STORE).put(value, key);
+      db.transaction(VID_CACHE_STORE, 'readwrite').objectStore(VID_CACHE_STORE).put(value, key);
     }).catch(function(){});
   }
 
   /* ── Clean filename → search query ── */
   function fileNameToQuery(name) {
-    // Strip extension
-    var q = name.replace(/\.[^.]+$/, '');
-    // Strip common download artifacts: (Official Video), [HD], quality tags, etc.
-    q = q.replace(/\(?(official\s*(video|audio|lyric|music\s*video|mv)|lyrics?|hd|4k|full\s*video|audio|ft\.?.*|feat\.?.*)\)?/gi, '');
-    // Strip leading/trailing punctuation and spaces
-    q = q.replace(/[-_]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    var q = name.replace(/\.[^.]+$/, '');            // remove extension
+    q = q.replace(/[\[\]\(\)\{\}]/g, ' ');           // brackets → space
+    q = q.replace(/\b(official|video|audio|lyric|lyrics|hd|4k|full|ft|feat)\b/gi, ' ');
+    q = q.replace(/[-_|•·]+/g, ' ');                 // separators → space
+    q = q.replace(/\s{2,}/g, ' ').trim();
+    // Keep Hindi/Devanagari — do NOT strip non-ASCII
     return q;
   }
 
-  /* ── Invidious search ── */
+  /* ── Search via Invidious API (with CORS proxy) ── */
   function searchInvidious(query, instanceIdx) {
     instanceIdx = instanceIdx || 0;
-    if (instanceIdx >= INV_INSTANCES.length) return Promise.reject(new Error('All Invidious instances failed'));
-    var base = INV_INSTANCES[instanceIdx];
-    var url  = base + '/api/v1/search?q=' + encodeURIComponent(query) + '&type=video&fields=videoId,title,author,lengthSeconds&hl=en&gl=IN';
-    return fetch(url, { mode: 'cors' })
+    if (instanceIdx >= INV_INSTANCES.length) return Promise.reject(new Error('All instances failed'));
+    var apiUrl = INV_INSTANCES[instanceIdx] +
+      '/api/v1/search?q=' + encodeURIComponent(query) +
+      '&type=video&fields=videoId,title&hl=en&gl=IN';
+    return fetch(proxied(apiUrl))
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       })
-      .then(function(results) {
-        if (!Array.isArray(results) || !results.length) throw new Error('No results');
+      .then(function(data) {
+        // allorigins wraps in { contents: '...' } if it returns JSON as string
+        var results = Array.isArray(data) ? data
+                    : (data && data.contents) ? JSON.parse(data.contents)
+                    : null;
+        if (!results || !results.length) throw new Error('No results');
         return results;
       })
-      .catch(function() {
-        // Try next instance
+      .catch(function(e) {
         return searchInvidious(query, instanceIdx + 1);
       });
   }
 
-  /* ── Scrape fallback via Invidious HTML search ── */
-  function searchScrape(query) {
-    // Use a CORS proxy to hit an Invidious search page and scrape video IDs from JSON-LD or href
-    var proxyUrl = 'https://api.allorigins.win/raw?url=' +
-      encodeURIComponent('https://inv.nadeko.net/search?q=' + encodeURIComponent(query) + '&type=video');
-    return fetch(proxyUrl)
-      .then(function(r) { if (!r.ok) throw new Error('proxy fail'); return r.text(); })
+  /* ── YouTube oEmbed ID extraction (no API key, reliable) ── */
+  // Search via a public YouTube search URL scraped through proxy
+  function searchYouTubeScrape(query) {
+    var ytUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+    return fetch(proxied(ytUrl))
+      .then(function(r) { if (!r.ok) throw new Error('yt fail'); return r.text(); })
       .then(function(html) {
-        // Extract videoId values from href="/watch?v=XXXXXXXXXXX"
+        var ids = [];
+        // ytInitialData contains videoId fields
+        var re = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
+        var m;
+        while ((m = re.exec(html)) !== null) {
+          if (ids.indexOf(m[1]) === -1) ids.push(m[1]);
+          if (ids.length >= 8) break;
+        }
+        if (!ids.length) throw new Error('No YT IDs scraped');
+        // Fetch titles via oEmbed for top 3 IDs to pick best match
+        return Promise.all(ids.slice(0, 3).map(function(id) {
+          return fetch(proxied('https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + id + '&format=json'))
+            .then(function(r) { return r.ok ? r.json() : { title: '' }; })
+            .then(function(d) { return { videoId: id, title: d.title || '' }; })
+            .catch(function() { return { videoId: id, title: '' }; });
+        }));
+      });
+  }
+
+  /* ── Invidious HTML scrape fallback ── */
+  function searchInvidiousScrape(query) {
+    var url = 'https://inv.nadeko.net/search?q=' + encodeURIComponent(query) + '&type=video';
+    return fetch(proxied(url))
+      .then(function(r) { if (!r.ok) throw new Error('scrape fail'); return r.text(); })
+      .then(function(html) {
         var ids = [];
         var re = /href="\/watch\?v=([a-zA-Z0-9_-]{11})"/g;
         var m;
@@ -1354,50 +1379,48 @@ var LV = (function() {
           if (ids.length >= 5) break;
         }
         if (!ids.length) throw new Error('No IDs scraped');
-        // Return in Invidious-like format with just IDs
         return ids.map(function(id) { return { videoId: id, title: '' }; });
       });
   }
 
-  /* ── Score match between filename query and result title ── */
+  /* ── Score title match ── */
   function scoreMatch(query, title) {
     if (!title) return 0;
     var q = query.toLowerCase();
     var t = title.toLowerCase();
-    // Exact contains: high score
     if (t.includes(q)) return 100;
-    // Word overlap score
-    var qWords = q.split(/\s+/).filter(function(w) { return w.length > 2; });
-    var tWords = t.split(/\s+/);
-    var matches = qWords.filter(function(w) { return tWords.some(function(tw) { return tw.includes(w); }); });
+    var qWords = q.split(/\s+/).filter(function(w) { return w.length > 1; });
+    var matches = qWords.filter(function(w) { return t.includes(w); });
     return Math.round(matches.length / Math.max(qWords.length, 1) * 80);
   }
 
-  /* ── Main: find YouTube ID for a filename ── */
+  /* ── Main: find YouTube video ID for a filename ── */
   function findVideoId(filename) {
-    // 1. Check filename for explicit [ID] first
+    // 1. Explicit [ID] in filename
     var explicit = filename.match(/[\[\(\{]([a-zA-Z0-9_-]{11})[\]\)\}]/);
     if (explicit) return Promise.resolve({ id: explicit[1], source: 'filename', title: '', confidence: 100 });
 
     var query    = fileNameToQuery(filename);
-    var cacheKey = query.toLowerCase().replace(/\s+/g, '_');
+    var cacheKey = query.toLowerCase().replace(/\s+/g, '_').slice(0, 120);
 
-    // 2. Check IndexedDB cache
+    // 2. IDB cache
     return getCachedVidId(cacheKey).then(function(cached) {
-      if (cached && cached.id) return cached; // { id, title, confidence, source:'cache' }
+      if (cached && cached.id) return cached;
 
-      // 3. Try Invidious API
+      // 3. Invidious API (proxied)
       return searchInvidious(query)
         .catch(function() {
-          // 4. Fallback: scrape
-          return searchScrape(query);
+          // 4. YouTube scrape
+          return searchYouTubeScrape(query)
+            .catch(function() {
+              // 5. Invidious HTML scrape
+              return searchInvidiousScrape(query);
+            });
         })
         .then(function(results) {
           if (!results || !results.length) throw new Error('no results');
-          // Pick best match by title score
-          var best = results[0];
-          var bestScore = scoreMatch(query, results[0].title || '');
-          results.slice(1, 5).forEach(function(r) {
+          var best = results[0], bestScore = scoreMatch(query, results[0].title || '');
+          results.slice(1).forEach(function(r) {
             var s = scoreMatch(query, r.title || '');
             if (s > bestScore) { bestScore = s; best = r; }
           });
@@ -1413,14 +1436,18 @@ var LV = (function() {
     var catParams = SB_CATS.map(function(c) { return 'category=' + c; }).join('&');
     var path = '?videoID=' + encodeURIComponent(videoId) + '&' + catParams + '&actionType=skip';
     function tryFetch(url) {
-      return fetch(url + path, { mode: 'cors' })
+      return fetch(url + path)
         .then(function(r) {
           if (r.status === 404) return [];
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         });
     }
+    // Try direct first (works if network allows), then proxied, then mirror
     return tryFetch(SB_API)
+      .catch(function() { return tryFetch(proxied(SB_API + path)).then(function(d) {
+          return Array.isArray(d) ? d : (d && d.contents ? JSON.parse(d.contents) : []);
+        }); })
       .catch(function() { return tryFetch(SB_API_MIRROR); })
       .catch(function(e) { return { error: e.message }; });
   }
@@ -1430,17 +1457,15 @@ var LV = (function() {
     for (var i = existing.length - 1; i >= 0; i--) existing[i].remove();
     if (!_sbSegments.length || !duration || !isFinite(duration) || duration <= 0) return;
     _sbSegments.forEach(function(s) {
-      var start = s.segment[0];
-      var end   = s.segment[1];
+      var start = s.segment[0], end = s.segment[1];
       if (end > duration) end = duration;
       if (start >= duration) return;
       var el = document.createElement('div');
       el.className = 'sb-seg';
-      var color = SB_CAT_COLORS[s.category] || '#e8a020';
       el.style.left       = (start / duration * 100) + '%';
-      el.style.width      = ((end - start) / duration * 100) + '%';
-      el.style.background = color;
-      el.title = (SB_CAT_LABELS[s.category] || s.category) + ' (' + fmtDuration(start) + ' \u2192 ' + fmtDuration(end) + ')';
+      el.style.width      = Math.max((end - start) / duration * 100, 0.3) + '%';
+      el.style.background = SB_CAT_COLORS[s.category] || '#e8a020';
+      el.title = (SB_CAT_LABELS[s.category] || s.category) + ' ' + fmtDuration(start) + '→' + fmtDuration(end);
       sbTimeline.appendChild(el);
     });
   }
@@ -1458,8 +1483,7 @@ var LV = (function() {
     var ct = videoEl.currentTime;
     if (ct < _sbLastSkipEnd - 2) _sbLastSkipEnd = -1;
     _sbSegments.forEach(function(s) {
-      var start = s.segment[0];
-      var end   = s.segment[1];
+      var start = s.segment[0], end = s.segment[1];
       if (ct >= start && ct < end && end !== _sbLastSkipEnd) {
         _sbLastSkipEnd = end;
         videoEl.currentTime = end;
@@ -1475,21 +1499,20 @@ var LV = (function() {
     if (!t) {
       t = document.createElement('div');
       t.id = 'sb-skip-toast';
-      t.style.cssText = 'position:fixed;top:72px;right:14px;z-index:10010;background:rgba(0,180,0,0.92);color:#fff;font-size:13px;font-weight:700;padding:8px 16px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;';
+      t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:10010;background:rgba(0,180,0,0.92);color:#fff;font-size:13px;font-weight:700;padding:8px 18px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;';
       document.body.appendChild(t);
     }
     t.textContent = '\u23ED Skipped: ' + label;
     t.style.opacity = '1';
-    if (_sbToastTimer) clearTimeout(_sbToastTimer);
-    _sbToastTimer = setTimeout(function() { t.style.opacity = '0'; }, 2000);
+    clearTimeout(t._t);
+    t._t = setTimeout(function() { t.style.opacity = '0'; }, 2000);
   }
 
   function seekTimeline(e) {
     if (!videoEl.duration || !isFinite(videoEl.duration)) return;
     var rect = sbTimeline.getBoundingClientRect();
-    var x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
-    var pct = Math.max(0, Math.min(1, x / rect.width));
-    videoEl.currentTime = pct * videoEl.duration;
+    var x = (e.clientX !== undefined ? e.clientX : e.touches[0].clientX) - rect.left;
+    videoEl.currentTime = Math.max(0, Math.min(1, x / rect.width)) * videoEl.duration;
   }
 
   function updateSBBar() {
@@ -1497,15 +1520,14 @@ var LV = (function() {
     var cats = {};
     _sbSegments.forEach(function(s) { cats[s.category] = (cats[s.category] || 0) + 1; });
     var parts = Object.keys(cats).map(function(c) {
-      var color = SB_CAT_COLORS[c] || '#e8a020';
-      return '<span style="color:' + color + '">' + (SB_CAT_LABELS[c] || c) + '</span>';
+      return '<span style="color:' + (SB_CAT_COLORS[c] || '#e8a020') + '">' + (SB_CAT_LABELS[c] || c) + '</span>';
     });
-    var skipInfo = _sbSkipped ? ' \u2014 <strong>' + _sbSkipped + ' skipped</strong>' : '';
+    var skipInfo = _sbSkipped ? ' \u2014 <b>' + _sbSkipped + ' skipped</b>' : '';
     var toggle = '<button id="sb-toggle-btn" onclick="LV.toggleSBSkip()" style="background:' +
-      (_sbAutoSkip ? '#00aa44' : '#666') +
-      ';color:#fff;border:none;border-radius:10px;padding:2px 10px;font-size:10px;cursor:pointer;font-weight:700;">' +
+      (_sbAutoSkip ? '#00aa44' : '#555') +
+      ';color:#fff;border:none;border-radius:10px;padding:3px 10px;font-size:10px;cursor:pointer;font-weight:700;">' +
       (_sbAutoSkip ? 'AUTO-SKIP ON' : 'AUTO-SKIP OFF') + '</button>';
-    sbBar.innerHTML = '\u26A1 SponsorBlock: ' + parts.join(', ') + skipInfo + '&nbsp;&nbsp;' + toggle;
+    sbBar.innerHTML = '\u26A1 ' + parts.join(' ') + skipInfo + '&nbsp;' + toggle;
     sbBar.className = 'visible';
   }
 
@@ -1514,7 +1536,7 @@ var LV = (function() {
     updateSBBar();
   }
 
-  /* ── onVideoOpen: search YT ID → fetch SB segments ── */
+  /* ── onVideoOpen ── */
   function onVideoOpen(f, onReady) {
     _sbSegments    = [];
     _sbSkipped     = 0;
@@ -1523,29 +1545,30 @@ var LV = (function() {
     renderSBSegments(0);
     sbBar.className = '';
 
-    sbBar.innerHTML = '\u26A1 Finding song on YouTube\u2026';
+    // Show searching status immediately
+    sbBar.innerHTML = '\u26A1 SB: searching\u2026';
     sbBar.className = 'visible';
 
     findVideoId(f.name)
       .then(function(result) {
         if (!result || !result.id) throw new Error('no id');
 
-        var sourceLabel = result.source === 'filename' ? 'ID from filename'
-                        : result.source === 'cache'    ? 'cached'
-                        : ('found' + (result.confidence < 60 ? ' \u26A0\uFE0F low confidence' : ''));
-
-        sbBar.innerHTML = '\u26A1 SB: checking \u2014 ' + esc(result.title || result.id) + ' <span style="color:var(--muted);font-size:10px">(' + sourceLabel + ')</span>';
+        var src = result.source === 'filename' ? 'from filename'
+                : result.source === 'cache'    ? 'cached'
+                : (result.confidence >= 60 ? 'found' : 'low confidence \u26A0\uFE0F');
+        sbBar.innerHTML = '\u26A1 SB: ' + esc(result.title || result.id).slice(0, 40) +
+                          ' <small style="color:#999">(' + src + ')</small>';
 
         return fetchSBSegments(result.id).then(function(sbResult) {
-          if (!sbResult || sbResult.error) {
-            sbBar.innerHTML = '\u26A1 SponsorBlock: network unavailable';
-            setTimeout(function() { sbBar.className = ''; }, 3000);
+          if (sbResult && sbResult.error) {
+            sbBar.innerHTML = '\u26A1 SB: network error \u2014 ' + sbResult.error;
+            setTimeout(function() { sbBar.className = ''; }, 4000);
             if (onReady) onReady();
             return;
           }
           _sbSegments = Array.isArray(sbResult) ? sbResult : [];
           if (!_sbSegments.length) {
-            sbBar.innerHTML = '\u26A1 SB: no segments \u2014 <span style="color:var(--muted);font-size:10px">' + esc(result.title || result.id) + '</span>';
+            sbBar.innerHTML = '\u26A1 SB: no segments for ' + esc(result.title || result.id).slice(0, 30);
             setTimeout(function() { sbBar.className = ''; }, 3000);
             if (onReady) onReady();
             return;
@@ -1556,8 +1579,8 @@ var LV = (function() {
         });
       })
       .catch(function(e) {
-        sbBar.innerHTML = '\u26A1 SponsorBlock: could not identify song';
-        setTimeout(function() { sbBar.className = ''; }, 3000);
+        sbBar.innerHTML = '\u26A1 SB: could not find song (' + (e.message || 'error') + ')';
+        setTimeout(function() { sbBar.className = ''; }, 4000);
         if (onReady) onReady();
       });
   }
@@ -1820,8 +1843,8 @@ var LV = (function() {
     var icon512 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Crect width=%22512%22 height=%22512%22 rx=%2260%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M186 140l220 116-220 116V140z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var icon192 = '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%230f0f0f%22/%3E%3Cpath d=%22M70 53l82 43-82 43V53z%22 fill=%22%235b8cde%22/%3E%3C/svg%3E';
     var manifest = {
-      name: 'index14',
-      short_name: 'index14',
+      name: 'index16',
+      short_name: 'index16',
       description: 'Offline local media player with SponsorBlock',
       start_url: '.',
       display: 'standalone',
